@@ -1,0 +1,12 @@
+Package: seqhandbook
+Type: Package
+Title: A complement to the handbook on sequence analysis
+Version: 0.1.0
+Depends: TraMineR
+Author: Nicolas Robette
+Maintainer: Nicolas Robette <nicolas.robette@uvsq.fr>
+Description: More about what it does (maybe more than one line)
+    Use four spaces when indenting paragraphs within the Description.
+License: GPL (>= 2)
+Encoding: UTF-8
+LazyData: true

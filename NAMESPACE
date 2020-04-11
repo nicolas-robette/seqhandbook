@@ -1,0 +1,6 @@
+import(TraMineR)
+
+  importFrom("stats", "cor", "as.dendrogram", "as.dist", "dist", "heatmap", "var")
+  importFrom("utils", "combn")
+    
+export(assoc.domains,seq_heatmap,seqi1epi,seqmds.stress,symPLS)
