@@ -9,17 +9,9 @@ A data frame describing respectively the matrimonial, parental and residential s
 }
 \usage{data("seqmsa")}
 \format{
-  A data frame with 500 observations and 66 variables. The first 22 variables (prefixed 'log') describe the residential status at a given age : 1 = not independent, 2 = independent. The next 22 variables (prefixed 'mat') describe the matrimonial status at a given age : 1 = never been in a relationship, 2 = cohabiting union, 3 = married, 4 = separated. The last 22 variables (prefixed 'nenf') describe the parental status at a given age : 0 = no child, 1 = one child, 2 = two children, 3 = three children or more.
+  A data frame with 500 observations and 66 variables. The first 22 variables (prefixed 'log') describe the residential status at a given age : 0 = not independent, 1 = independent. The next 22 variables (prefixed 'mat') describe the matrimonial status at a given age : 1 = never been in a relationship, 2 = cohabiting union, 3 = married, 4 = separated. The last 22 variables (prefixed 'nenf') describe the parental status at a given age : 0 = no child, 1 = one child, 2 = two children, 3 = three children or more.
 }
-\details{
-%%  ~~ If necessary, more details than the __description__ above ~~
-}
-\source{
-%%  ~~ reference to a publication or URL from which the data were obtained ~~
-}
-\references{
-%%  ~~ possibly secondary sources and usages ~~
-}
+
 \examples{
 data(seqmsa)
 str(seqmsa)

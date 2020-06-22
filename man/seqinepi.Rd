@@ -1,15 +1,15 @@
-\name{seqi1epi}
-\alias{seqi1epi}
+\name{seqinepi}
+\alias{seqinepi}
 
 \title{
-At least one episode in the states
+Number of episodes in each state
 }
 \description{
-  Returns whether each sequence comprises at least one episode in the states.
+  Returns the number of episodes in the states.
   }
   
 \usage{
-seqi1epi(seqdata)
+seqinepi(seqdata)
 }
 
 \arguments{
@@ -23,13 +23,13 @@ Gabadinho, A., G. Ritschard, N. S. Müller and M. Studer (2011). Analyzing and V
 \author{Nicolas Robette}
 
 \seealso{
-\code{\link{seqistatd}}, \code{\link{seqinepi}}, \code{\link{seqifpos}}
+\code{\link{seqistatd}}, \code{\link{seqi1epi}}, \code{\link{seqifpos}}
 }
 
 \examples{
 data(trajact)
 seqact <- seqdef(trajact)
-stat <- seqi1epi(seqact)
+stat <- seqinepi(seqact)
 head(stat)
 }
 

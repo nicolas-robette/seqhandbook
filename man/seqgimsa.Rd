@@ -11,15 +11,7 @@ A data frame describing mothers employment histories from age 14 to 60 and daugh
 \format{
   A data frame with 400 observations and 62 numeric variables. The first 15 variables (prefixed 'f') describe the daughters employment status a given year : 1 = education, 2 = inactivity, 3 = part-time job, 4 = full-time job. The following 47 variables (prefixed 'm') describe the mothers employment status at a given age : 1 = self-employment, 3 = higher level or intermediate occupation, 5 = lower level occupation, 8 = inactivity, 9 = education.
 }
-\details{
-%%  ~~ If necessary, more details than the __description__ above ~~
-}
-\source{
-%%  ~~ reference to a publication or URL from which the data were obtained ~~
-}
-\references{
-%%  ~~ possibly secondary sources and usages ~~
-}
+
 \examples{
 data(seqgimsa)
 str(seqgimsa)
