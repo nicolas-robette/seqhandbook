@@ -24,14 +24,32 @@ Piccarreta R. (2017). Joint Sequence Analysis: Association and Clustering, \emph
 \author{Nicolas Robette}
 
 \examples{
-##---- Should be DIRECTLY executable !! ----
-##-- ==>  Define data, use random,
-##--	or do  help(data=index)  for the standard data sets.
+\donttest{
+library(TraMineR)
+data(biofam)
 
-## The function is currently defined as
-function (x) 
-{
-  }
+## Building one channel per type of event (left, children or married)
+bf <- as.matrix(biofam[, 10:25])
+children <-  bf==4 | bf==5 | bf==6
+married <- bf == 2 | bf== 3 | bf==6
+left <- bf==1 | bf==3 | bf==5 | bf==6
+
+## Building sequence objects
+child.seq <- seqdef(children)
+marr.seq <- seqdef(married)
+left.seq <- seqdef(left)
+
+## Using Hamming distance
+mcdist <- seqdistmc(channels=list(child.seq, marr.seq, left.seq),
+ 	method="HAM")
+child.dist <- seqdist(child.seq, method="HAM")
+marr.dist <- seqdist(marr.seq, method="HAM")
+left.dist <- seqdist(left.seq, method="HAM")
+
+## Association between domains
+asso <- assoc.domains(list(child.dist,marr.dist,left.dist), c('child','marr','left'), mcdist)
+asso
+}
 }
 
 \keyword{Longitudinal characteristics}

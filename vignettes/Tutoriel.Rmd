@@ -1,0 +1,860 @@
+---
+title: "[fr] Tutoriel d'analyse de séquences"
+author: "Nicolas Robette"
+date: "`r Sys.Date()`"
+output: 
+ rmdformats::html_clean:
+   thumbnails: FALSE
+   use_bookdown: FALSE
+vignette: >
+  %\VignetteIndexEntry{[fr] Tutoriel d'analyse de séquences}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{WeightedCluster}
+---
+
+
+```{r setup, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+oldpar <- par() 
+oldoptions <- options()
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               prompt=FALSE,
+               tidy=FALSE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+
+
+# Mise en route
+
+On commence par charger les extensions (*packages*) nécessaires (qu'il faut au préalable installer si elles ne le sont pas déjà) : `TraMineR`{.pkg} et `TraMineRextras`{.pkg} pour le traitement des séquences, `cluster`{.pkg} pour les méthodes de classification automatique, `WeightedCluster`{.pkg} en complément des précédentes, `FactoMineR`{.pkg} et `ade4`{.pkg} pour les analyses factorielles, `RColorBrewer`{.pkg} pour les palettes de couleurs, `questionr`{.pkg} et `GDAtools`{.pkg} pour les statistiques descriptives, `dplyr`{.pkg} et `purrr`{.pkg} pour la manipulation de données, `ggplot2`{.pkg} pour les graphiques et `seqhandbook`{.pkg} l'extension qui accompagne le manuel.
+
+```{r, message=FALSE}
+library(TraMineR)
+library(TraMineRextras)
+library(cluster)
+library(WeightedCluster)
+library(FactoMineR)
+library(ade4)
+library(RColorBrewer)
+library(questionr)
+library(GDAtools)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(seqhandbook)
+```
+
+On charge ensuite les données utilisées dans le manuel. Les données sur les trajectoires d'emploi sont dans le tableau de données (*data frame*) `trajact` : il y a 500 observations, i.e. 500 trajectoires individuelles, et 37 variables, correspondant au statut d'activité observé chaque année entre 14 ans et 50 ans.
+
+```{r}
+# chargement des trajectoires
+data(trajact)
+str(trajact)
+```
+
+La première étape de l'analyse de séquences consiste à créer un corpus de séquences, c'est-à-dire un objet de classe `stslist` à l'aide la fonction `seqdef`. On définit d'abord (mais c'est facultatif) les labels des 6 états et une palette de 6 couleurs.
+
+```{r}
+# définition du corpus de séquences
+labs <- c("études","temps plein","temps partiel","petits boulots","inactivité","serv. militaire")
+palette <- brewer.pal(length(labs), 'Set2')
+seqact <- seqdef(trajact, labels=labs, cpal=palette)
+```
+
+Notre corpus de 500 séquences comporte 377 séquences distinctes, ce qui confirme l'intérêt d'utiliser une procédure statistique pour regrouper les séquences qui se ressemblent.
+
+```{r}
+# nombre de séquences distinctes
+seqtab(seqact, idx=0) %>% nrow
+```
+
+Le chronogramme (*state distribution plot*) de l'ensemble des séquences fait apparaître la prépondérance de l'emploi à temps plein et le poids non négligeable de l'inactivité.
+
+```{r fig1, fig.align="center", out.width="80%"}
+# chronogramme
+seqdplot(seqact, xtlab=14:50, cex.legend=0.7)
+```
+
+On charge également un tableau de données contenant quelques variables socio-démographiques sur les individus.
+
+```{r}
+# chargement des variables socio-démographiques
+data(socdem)
+str(socdem)
+```
+***
+
+# Construction d'une matrice de distance
+
+## Indicateurs synthétiques
+
+A titre d'exemple, on construit une matrice de distance à partir d'indicateurs décrivant le nombre d'épisodes dans les différents états.
+
+```{r}
+indics <- seqinepi(seqact)
+head(indics)
+```
+
+La matrice peut être calculée directement à partir des indicateurs ou après une étape d'analyse en composantes principales (ACP), ici en retenant les 5 premières dimensions.
+
+```{r}
+# matrice de distance à partir des indicateurs
+dissim <- dist(indics, method='euclidean') %>% as.matrix
+
+# matrice de distance à partir des résultats d'une ACP
+acp_coords <- PCA(indics, scale.unit=FALSE, ncp=5, graph=FALSE)$ind$coord
+dissim <- dist(acp_coords, method='euclidean') %>% as.matrix
+```
+
+D'autres indicateurs synthétiques (durées, états visités, etc.) peuvent être calculés simplement à partir des fonctions `seqistatd`, `seqi1epi`, `seqifpos`, `seqindic` ou `seqpropclust`.
+
+
+## Disjonctif complet et AHQ
+
+Dans le cas du codage sous forme de disjonctif complet, la matrice de distance peut être calculée directement, avec la distance euclidienne ou la distance du chi2, ou après une étape d'analyse en composantes principales (ACP) ou d'analyse des correspondances multiples (ACM), ici en retenant les 5 premières dimensions.
+
+```{r}
+# codage disjonctif complet
+disjo <- dichotom(seqact)
+disjo <- disjo[,colSums(disjo)>0]
+
+# distance euclidienne
+dissim <- dist(disjo, method='euclidean') %>% as.matrix
+
+# distance du chi2
+dissim <- map_df(disjo, as.factor) %>%
+          dudi.acm(scannf=FALSE, nf=ncol(disjo)) %>%
+          dist.dudi() %>%
+          as.matrix
+
+# après une ACP
+acp_coords <- PCA(disjo, scale.unit=FALSE, ncp=5, graph=FALSE)$ind$coord
+dissim <- dist(acp_coords, method='euclidean') %>% as.matrix
+
+# après une ACM
+acm_res <- purrr::map_df(disjo, as.factor) %>%
+           MCA(ncp=5, graph=FALSE)
+dissim <- dist(acm_res$ind$coord, method='euclidean') %>% as.matrix
+```
+
+Pour l'analyse harmonique qualitative (AHQ), le calcul de la matrice de distance peut se faire directement (distance du chi2) ou après une analyse factorielle des correspondances (AFC), ici en retenant les 5 premières dimensions.
+
+```{r}
+# codage AHQ
+ahq <- seq2qha(seqact, c(1,3,7,10,15,20,28))
+ahq <- ahq[,colSums(ahq)>0]
+
+# distance du chi2
+dissim <- dudi.coa(ahq, scannf=FALSE, nf=ncol(ahq)) %>%
+          dist.dudi() %>%
+          as.matrix
+
+# après une AFC
+afc_coord <- CA(ahq, ncp=5, graph=FALSE)$row$coord
+dissim <- dist(afc_coord, method='euclidean') %>% as.matrix
+```
+
+
+## *Optimal Matching* et alternatives
+
+Pour l'*Optimal Matching*, la construction d'une matrice de distance entre les séquences s'effectue avec la fonction `seqdist`. Cela implique de définir également une matrice de coûts de substitution entre les états (avec la fonction `seqsubm`). Ici, les coûts de substitution sont constants et égaux à 2 et le coût *indel* est égal à 1,5.
+
+```{r, message=FALSE}
+# construction de la matrice de distance
+couts <- seqsubm(seqact, method="CONSTANT", cval=2)
+dissim <- seqdist(seqact, method="OM", sm=couts, indel=1.5)
+```
+
+D'expérience, l'*Optimal Matching* avec le paramétrage adopté ici constitue un choix permettant de prendre en compte les différentes dimensions de la temporalité des séquences - ordonnancement (*sequencing*), calendrier (*timing*), durée (dans les différents états ou des épisodes, *duration* et *spell duration*). Si on souhaite privilégier l'une de ces dimensions, on peut suivre les recommandations de Studer & Ritschard (2016, voir en particulier pages 507-509), et choisir l'une des nombreuses autres métriques implémentées dans l'extension `TraMineR`.
+
+```{r, eval=FALSE}
+# sequencing
+dissim <- seqdist(seqact, method="OMstran", otto=0.1, sm=couts, indel=1)
+dissim <- seqdist(seqact, method="OMspell", expcost=0, sm=couts, indel=1)
+dissim <- seqdist(seqact, method="SVRspell", tpow=0)
+
+# timing
+dissim <- seqdist(seqact, method="HAM", sm=couts)
+dissim <- seqdist(seqact, method="CHI2", step=1)
+
+# duration (distribution aver the entire period)
+dissim <- seqdist(seqact, method="EUCLID", step=37)
+
+# duration (spell lengths)
+dissim <- seqdist(seqact, method="OMspell", expcost=1, sm=couts, indel=1)
+dissim <- seqdist(seqact, method="LCS")
+```
+
+A noter, les méthodes passant par le disjonctif complet ou l'AHQ sont également implémentées dans la fonction `seqdist` (méthodes "EUCLID" et "CHI2").
+
+
+***
+
+# Typologie de séquences
+
+## Construction d'une typologie
+
+On réalise ensuite une classification ascendante hiérarchique (CAH) avec le critère d'agrégation de Ward, à l'aide de la fonction `agnes` de l'extension `cluster`.
+
+NB : Avec un nombre élevé de séquences, la CAH peut nécessiter un temps de calcul important. Il existe cependant une implémentation nettement plus rapide dans l'extension `fastcluster` (fonction `hclust`).
+
+```{r}
+# classification ascendante hiérarchique
+agnes <- as.dist(dissim) %>% agnes(method="ward", keep.diss=FALSE)
+```
+
+Pour explorer les solutions d'une classification ascendante hiérarchique, on commence généralement par examiner le dendrogramme.
+
+```{r, fig.align="center", out.width="80%"}
+# dendrogramme
+as.dendrogram(agnes) %>% plot(leaflab="none")
+```
+
+Le graphique suivant combine dendrogramme et *index plot*: les séquences de l'index plot sont triées selon leur position dans le dendrogramme, lui-même représenté en marge du graphique.
+
+```{r, fig.align="center", out.width="80%"}
+# heatmap (dendrogramme + index plot)
+seq_heatmap(seqact, agnes)
+```
+
+L'examen des sauts d'inertie peut également être utile pour déterminer le nombre de classes de la typologie. On voit par exemple qu'il y a une différence d'inertie notable entre les partitions en 5 et 6 classes.
+
+```{r, fig.align="center", out.width="80%"}
+# graphique des sauts d'inertie
+plot(sort(agnes$height, decreasing=TRUE)[1:20], type="s", xlab="nombre de classes", ylab="inertie")
+```
+
+Il existe aussi un certain nombre d'indicateurs de qualité des partitions (silhouette, Calinski-Harabasz, pseudo-R2, etc.).
+
+```{r}
+# indicateurs de qualité
+wardRange <- as.clustrange(agnes, diss=dissim)
+summary(wardRange, max.rank=2)
+```
+
+On représente ici graphiquement la qualité des partitions pour différents nombres de classes pour les indicateurs silhouette, pseudo-R2 et Calinski-Harabasz.
+
+```{r, fig.align="center", out.width="80%"}
+plot(wardRange, stat=c('ASW','R2','CH'), norm="zscore")
+```
+
+On opte au final pour une partition en 5 classes, en "coupant l'arbre" de la CAH à l'aide de la fonction `cutree`.
+
+```{r}
+# choix de la partition en 5 classes
+nbcl <- 5
+part <- cutree(agnes, nbcl)
+```
+
+Il est possible de "consolider" la partition à l'aide de l'algorithme PAM (*Partition Around Medoids*) et de la fonction `wcKMedoids` de l'extension `WeightedCluster`. On aboutit ainsi à une distribution des séquences entre les classes très similaire (cf le tri croisant les classes avant et après consolidation) mais la qualité de la partition consolidée est légèrement supérieure (le R² passe de 61 à 64%).
+
+```{r}
+# consolidation de la partition
+newpart <- wcKMedoids(dissim, k=nbcl, initialclust=part, cluster.only=TRUE)
+table(part, newpart)
+wcClusterQuality(dissim, part)$stats['R2sq'] %>% round(3)
+wcClusterQuality(dissim, newpart)$stats['R2sq'] %>% round(3)
+```
+
+Si on souhaite conserver la partition consolidée :
+
+```{r}
+part <- as.numeric(as.factor(newpart))
+```
+
+NB: Autre option, la classification "floue", ici avec l'algorithme Fanny (extension `cluster`). A la différence de la CAH ou de PAM, chaque séquence n'appartient pas à une seule classe mais se caractérise par des degrés d'appartenance aux différentes classes. Le tableau suivant présente les degrés d'appartenance aux 6 classes des 3 premières séquences du corpus. La première séquence appartient à 99% à la classe 1, mais la seconde est plus "partagée", principalement entre les classes 2 et 5.
+
+```{r}
+# classification floue (fuzzy clustering)
+fanny <- as.dist(dissim) %>% fanny(k=5, metric='euclidean', memb.exp=1.2)
+fanny$membership %>% round(2) %>% .[1:3,]
+```
+
+
+## Description de la typologie: graphiques
+
+Les représentations graphiques permettent de se faire une idée rapide et intuitive de la nature des classes de la typologie. Le type de graphique le plus utilisé est le chronogramme (*state distribution plot*).
+
+```{r, fig.align="center", out.width="80%"}
+# chronogrammes de la typologie
+seqdplot(seqact, group=part, xtlab=14:50, border=NA, cex.legend=0.8)
+```
+
+Les *index plots* (ou "tapis") sont également très répandus.
+
+```{r, fig.align="center", out.width="80%"}
+# index plots de la typologie
+seqIplot(seqact, group=part, xtlab=14:50, yaxis=FALSE, cex.legend=0.8)
+```
+
+Les *index plots* sont souvent plus faciles à interpréter lorsqu'on trie les séquences, en particulier à partir d'une procédure de *multidimensional scaling*.
+
+```{r, fig.align="center", out.width="80%"}
+# index plots de la typologie, triés par multidimensional scaling
+mds.order <- cmdscale(dissim,k=1)
+seqIplot(seqact, sortv=mds.order, group=part, xtlab=14:50, yaxis=FALSE, cex.legend=0.8)
+```
+
+Ils peuvent également être "lissés", pour les rendre plus lisibles.
+
+Méthode des "*smoothed MDS sequence plots*" (Piccarreta, 2012):
+
+```{r}
+smoothed <- seqsmooth(seqact, dissim, k=30)$seqdata
+seqIplot(smoothed, sortv=mds.order, group=part, xtlab=14:50, yaxis=FALSE, cex.legend=0.8)
+```
+
+Méthode des "*relative frequency sequence plots*" (Fasang & Liao, 2013):
+
+```{r, fig.align="center", out.width="80%", message=FALSE}
+# relative frequency sequence plots
+seqplot.rf(seqact, diss=dissim, group=part, xtlab=14:50)
+```
+
+Les *sequence frequency plots* représentent, pour chaque classe, les 10 séquences les plus fréquentes (avec une épaisseur proportionnelle à leur fréquence).
+
+```{r, fig.align="center", out.width="80%"}
+# frequency plots
+seqfplot(seqact, group=part, ylab="", xtlab=14:50, cex.legend=0.8)
+```
+
+Les *modal state sequence plots* représentent, pour chaque classe, la séquence des états modaux pour chaque position dans le temps. A chaque position dans le temps, la hauteur de la barre est proportionnelle à la fréquence de l'état modal.
+
+```{r, fig.align="center", out.width="80%"}
+# modal state plots
+seqmsplot(seqact, group=part, xtlab=14:50, cex.legend=0.8)
+```
+
+```{r, fig.align="center", out.width="80%", message=FALSE, include=FALSE}
+# representative sequence plots
+seqrplot(seqact, group=part, diss=dissim, nrep=10, xtlab=14:50)
+```
+
+
+## Description de la typologie: statistiques
+
+La première étape de description statistique de la typologie consiste généralement à présenter le poids des classes. La classe 2 rassemble plus de la moitié des individus, alors que les classes 3 et 5 sont de très petite taille.
+
+```{r}
+# effectifs
+table(part)
+```
+
+```{r}
+# pourcentages
+100*(table(part))/length(part)
+```
+
+Il est utile d'évaluer l'homogénéité des classes. Cela peut se faire à partir des distances intra-classes. Les classes 1 et 2 sont les plus homogènes.
+
+```{r}
+# distances intra-classes
+Dintra <- integer(length=nbcl)
+for(i in 1:nbcl) Dintra[i] <- round(mean(dissim[part==i,part==i]),1)
+Dintra
+```
+Les résultats sont convergents à partir des distances moyennes aux centres de classe :
+
+```{r}
+# distances moyennes au centre de la classe
+dissassoc(dissim, part)$groups
+```
+
+De même avec l'entropie transversale :
+
+```{r}
+# entropie transversale moyenne par classe
+entropie <- vector()
+for(i in 1:nbcl) entropie[i] <- round(mean(seqstatd(seqact[part==i,])$Entropy),2)
+entropie
+```
+
+Pour donner une vision plus détaillée de la forme des trajectoires de chaque classe, on calcule des indicateurs synthétiques, puis leur moyenne selon la classe de la typologie. La durée passée dans les états :
+
+```{r, message=FALSE}
+# durées dans les états selon la classe
+dur <- seqistatd(seqact)
+durees <- round(aggregate(dur, by=list(part), FUN=mean), 1)
+rownames(durees) <- NULL
+durees
+```
+
+La part d'individus ayant connu au moins un épisode dans les états :
+
+```{r, message=FALSE}
+# au moins un épisode dans les états, selon la classe
+epi <- seqi1epi(seqact)
+episodes <- round(aggregate(epi, by=list(part), FUN=mean), 2)
+rownames(episodes) <- NULL
+episodes
+```
+
+Ensuite, on croise la typologie avec les caractéristiques des individus. On commence par une analyse bivariée du type de trajectoire selon le sexe. Le V² de Cramer est de 0,16, indiquant une association notable. Les femmes sont très sur-représentées dans la classe 4 et secondairement dans la classe 3, alors que les hommes sont sur-représentés dans les classes 1 et 2 (les valeurs "phi" correspondent aux attractions ou répulsions entre modalités).
+
+```{r}
+assoc.twocat(factor(part), socdem$sexe)
+```
+
+On examine ensuite les sur-représentations pour chaque classe de la typologie à partir de l'ensemble des caractéristiques individuelles présentes dans le tableau de données `socdem`. On constate tout d'abord que seules trois variables ne semblent pas notablement liées au type de trajectoire (mereactive, nbunion, nationalite). Pour ne prendre que l'exemple de la classe 4, on voit que les femmes y sont sur-représentées, ainsi que les individus ayant trois enfants ou plus, sans diplôme ou de PCS inconnue (ce qui n'est certainement pas sans lien avec l'inactivité).
+
+```{r}
+catdesc(factor(part), socdem, min.phi=0.1)
+```
+
+
+## Description de la typologie: parangons
+
+Pour "incarner" la typologie, on recourt parfois aux parangons (*medoids*) des classes, dont on retrace de manière détaillée les trajectoires à partir d'informations non prises en compte dans le codage des trajectoires.
+
+```{r}
+# parangon de chaque classe (numéros de ligne dans le fichier de données)
+medoids(dissim, part)
+```
+
+
+***
+
+# Analyses non-typologiques
+
+## Distance à une séquence de référence
+
+On définit ici une séquence "de référence" correspondant à une trajectoire d'emploi à temps plein en continu à partir de 18 ans. On calcule ensuite, pour chaque séquence, sa distance à la séquence de référence: dans quelle mesure s'écartent-elles de cette référence ?
+
+```{r, message=FALSE}
+ref <- seqdef(as.matrix("(1,4)-(2,33)"), informat="SPS", alphabet=alphabet(seqact))
+distref <- seqdist(seqact, refseq = ref, method="OM", sm=couts, indel=1.5)
+```
+
+On observe ensuite la distribution de ces écarts en fonction du sexe et du nombre d'enfants. On constate que les trajectoires des femmes s’écartent plus de la trajectoire d’emploi continu à temps plein que celles des hommes lorsqu'elles ou ils ont un ou plusieurs enfants. L’écart est particulièrement fort chez les femmes ayant trois enfants ou plus.
+
+```{r, message=FALSE}
+socdem %>% select(sexe,nbenf) %>%
+           tibble(distref=distref) %>%
+           ggplot(aes(x=nbenf, y=distref)) + 
+             geom_boxplot(aes(fill=sexe), notch=T) +
+             xlab("nombre d'enfants") +
+             ylab("distance à la référence") +
+             theme_bw()
+```
+
+
+## Distances inter ou intra-groupes
+
+On compare les distances entre les trajectoires féminines et les distances entre trajectoires masculines. Les trajectoires masculines sont nettement plus homogènes ou, pour le dire autrement, celles des femmes sont plus diversifiées.
+
+```{r}
+# distances intra-classes selon le sexe
+sapply(levels(socdem$sexe), function(x) round(mean(dissim[socdem$sexe==x,socdem$sexe==x]),1))
+```
+La matrice de distance entre trajectoires peut être résumé graphiquement à partir d'un *multidimensional scaling* (MDS). On représente ici le nuage des individus dans le plan formé par les deux premiers axes, en colorant les points selon leur classe, puis on projette le sexe en variable supplémentaire. On observe par exemple que, sur le premier axe, les classes 1 et 2 s'opposent aux autres, et que les hommes sont du côté des classes 1 et 2.
+
+```{r, fig.align="center", out.width="80%"}
+mds <- cmdscale(dissim, k=2)
+plot(mds, type='n', xlab="axe 1", ylab="axe 2")
+abline(h=0, v=0, lty=2, col='lightgray')
+points(mds, pch=20, col=part)
+legend('topleft', paste('classe',1:nbcl), pch=20, col=1:nbcl, cex=0.8)
+text(aggregate(mds, list(socdem$sexe), mean)[,-1], levels(socdem$sexe), col='orange', cex=1, font=2)
+```
+
+
+## Indicateurs synthétiques
+
+On peut étudier la distribution d'indicateurs synthétisant les trajectoires en fonction d'autres caractéristiques des individus. Par exemple, le temps passé dans les différents états selon le sexe : on voit apparaître le poids de l'inactivité dans les trajectoires féminines.
+
+```{r, message=FALSE}
+# durées dans les états selon le sexe
+dur <- seqistatd(seqact)
+durees_sexe <- aggregate(dur, by=list(socdem$sexe), function(x) round(mean(x),1))
+rownames(durees_sexe) <- NULL
+colnames(durees_sexe) <- c("classe",labs)
+durees_sexe
+```
+
+On donne maintenant un exemple d'indicateur de complexité des trajectoires, la turbulence, croisé avec l'année de naissance. On ne constate pas d'évolution notable.
+
+```{r}
+# turbulence
+turbu <- aggregate(seqST(seqact), list(socdem$annais), mean)
+plot(turbu, type='l', ylim=c(0,10), xlab='Année de naissance')
+```
+
+D'autres indicateurs de complexité des trajectoires peuvent être calculés facilement : indice de complexité (fonction `seqici`), entropie individuelle (fonction `seqient`), nombre de transitions (fonction `seqtransn`).
+
+
+## Analyse de variance
+
+Avec une variable explicative unique, on mesure la part de la variance des dissimilarités expliquée par la variable (à l’aide d’un pseudo-R2), ainsi qu’une mesure de la variabilité des trajectoires pour chacune des modalités de la variable, i.e. dans chaque sous-population. Dans notre exemple, le sexe explique 7,4% de la variance des distances entre trajectoires d’emploi, et la variabilité des trajectoires est nettement plus élevée chez les femmes que chez les hommes (19,1 contre 9,4).
+
+```{r}
+# analyse de variance avec le sexe comme facteur
+dissassoc(dissim, socdem$sexe)
+```
+
+Il est possible de détailler ces indicateurs pour chaque position dans le temps des trajectoires. Ainsi, la part de variance expliquée par le sexe est presque nulle en début de trajectoire, elle croît ensuite fortement entre 18 ans et environ 30 ans (elle est alors de 14%), puis diminue pour n’être plus que de 5% à 50 ans.
+
+```{r, fig.align="center", out.width="80%"}
+# analyse de variance selon la position dans le temps
+diff <- seqdiff(seqact, group=socdem$sexe)
+rownames(diff$stat) <- rownames(diff$discrepancy) <- 14:49
+plot(diff, stat="Pseudo R2")
+```
+
+La variabilité des trajectoires des femmes et des hommes est faible en début de trajectoire et augmente jusqu’à l’âge de 21 ans. Les résultats divergent ensuite selon le sexe: la variabilité des trajectoires féminines se maintient jusqu’à 50 ans, alors que celle des hommes diminue fortement après 21 ans et atteint un niveau très faible entre 30 et 50 ans.
+
+```{r, fig.align="center", out.width="80%"}
+pal <- brewer.pal(ncol(diff$discrepancy), "Set2")
+plot(diff, stat="discrepancy", legend.pos=NA, col=pal, lwd=1.5)
+legend('topright', fill=pal, legend=colnames(diff$discrepancy), cex=0.7)
+```
+
+Avec plusieurs variables explicatives, on obtient la part de variance expliquée par l’ensemble des variables et la décomposition de cette part entre les variables. Ici, l’année de naissance, le sexe, le niveau de diplôme et le nombre d’enfants expliquent ensemble 16,2% de la variance des dissimilarités entre les trajectoires d’emploi: 7,7% pour le sexe, 6,0% pour le diplôme, 2,1% pour le nombre d’enfants et 0,3% pour l’année de naissance.
+
+```{r}
+# analyse de la variance avec facteurs multiples
+dissmfacw(dissim ~ annais+nbenf+sexe+diplome, data=socdem)
+```
+
+Enfin, l’analyse de variance peut servir à construire un arbre de décision, dit aussi arbre d’induction.
+
+```{r}
+# arbre d'induction
+arbre <- seqtree(seqact ~ annais+nbenf+sexe+diplome, data=socdem, diss=dissim, min.size=0.1, max.depth=3)
+```
+
+L'arbre peut être présenté sous forme textuelle ou graphique. A noter, la représentation graphique nécessite l'installation du logiciel GraphViz (cf l'aide de la function `seqtreedisplay`).
+
+Comme précédemment, on constate que la variable qui explique la plus grande part de variance des dissimilarités est le sexe. Ensuite, pour les femmes, la variable la plus discriminante est le nombre d’enfants et, plus précisément, le fait d’avoir ou non trois enfants ou plus. L’inactivité et, secondairement, le temps partiel sont plus présents dans les trajectoires des femmes ayant au moins trois enfants que dans celles des autres. Chez les hommes, en revanche, c’est le niveau de diplôme qui est le plus discriminant (les hommes entrent plus tard sur le marché du travail lorsqu’ils ont un diplôme supérieur ou égal au baccalauréat).
+
+```{r}
+# résultats de l'arbre sous forme textuelle
+print(arbre)
+```
+
+```{r, eval=FALSE}
+# résultats de l'arbre sous forme graphique
+seqtreedisplay(arbre,type="d",border=NA,show.depth=TRUE)
+```
+
+```{r, fig.align="center", out.width = '100%', echo=FALSE}
+knitr::include_graphics("http://nicolas.robette.free.fr/Docs/seqtree.png")
+```
+
+
+## Statistiques implicatives
+
+Pour étudier la manière dont les trajectoires diffèrent entre plusieurs sous-populations, Studer propose d’utiliser les statistiques implicatives. Il s’agit de reconstituer, pour chaque population, la séquence des états typiques (Studer, 2012; Struffolino *et al*, 2016).
+
+Ici, le service militaire est typique des trajectoires des hommes autour de 20 ans, puis c’est l’emploi à temps plein à partir de 25 ans (Figure 10). L’inactivité est caractéristique des trajectoires des femmes, et cela dès l’âge de 18 ans. L’emploi à temps partiel l’est également, mais de manière moins marquée et à partir de 30 ans.
+
+```{r, fig.align="center", out.width="80%"}
+# statistiques implicatives
+implic <- seqimplic(seqact, group=socdem$sexe)
+# par(mar=c(2,2,2,2))
+plot(implic, xtlab=14:50, lwd=2, conf.level=c(0.95, 0.99), cex.legend=0.7)
+```
+
+
+***
+
+# Analyse de séquences multidimensionnelles
+
+## Mise en route
+
+On commence par charger les données correspondant à trois dimensions des trajectoires de 500 individus tirés au sort dans l'enquête *Biographies et entourage* - matrimoniale, parentale et résidentielle - et observées de 14 à 35 ans.
+
+```{r}
+data(seqmsa)
+trajmat <- seqmsa %>% select(starts_with('smat'))
+str(trajmat)
+```
+
+```{r}
+trajenf <- seqmsa %>% select(starts_with('nenf'))
+str(trajenf)
+```
+
+```{r}
+trajlog <- seqmsa %>% select(starts_with('slog'))
+str(trajlog)
+```
+
+On définit ensuite trois objets séquences (un par dimension).
+
+```{r}
+# définition de la trajectoire matrimoniale
+labs <- c("jamais","union libre","marié","separé")
+palette <- brewer.pal(length(labs), 'Set2')
+seqmat <- seqdef(trajmat, labels=labs, cpal=palette)
+```
+
+```{r}
+# définition de la trajectoire parentale
+labs <- c("0","1","2","3+")
+palette <- brewer.pal(length(labs), 'YlOrRd')
+seqenf <- seqdef(trajenf, labels=labs, cpal=palette)
+```
+
+```{r}
+# définition de la trajectoire d'indépendance résidentielle
+labs <- c("non indépendant","indépendant")
+palette <- brewer.pal(3, 'Set1')[1:2]
+seqlog <- seqdef(trajlog, labels=labs, cpal=palette)
+```
+
+## Association entre dimensions
+
+On calcule la matrice de distance de chacune des dimensions, en utisant l'Optimal Matching (coût de substitution unique et égal à 2, coût *indel* de 1,5).
+
+```{r, message=FALSE}
+# matrices de distances des différentes dimensions
+dmat <- seqdist(seqmat, method="OM", indel=1.5, sm=seqsubm(seqmat,"CONSTANT",cval=2))
+denf <- seqdist(seqenf, method="OM", indel=1.5, sm=seqsubm(seqenf,"CONSTANT",cval=2))
+dlog <- seqdist(seqlog, method="OM", indel=1.5, sm=seqsubm(seqlog,"CONSTANT",cval=2))
+```
+
+On calcule également une matrice de distance à partir d'une analyse de séquences multiples (dite aussi "multichannel sequence analysis"). On décide ici de garder les mêmes coûts pour chacune des dimensions, mais ce n'est pas obligatoire.
+
+```{r, message=FALSE}
+# matrice de distances entre séquences multidimensionnelles
+dissim.MSA <- seqdistmc(list(seqmat,seqenf,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",3)), cval=2)
+```
+
+On étudie ensuite dans quelle mesure les différentes dimensions sont liées, ce qui peut être réalisé de plusieurs manières. D'après les corrélations, on voit que la dimension logement ("log") est la moins liée à la matrice de distance entre séquences multiples (appelée ici "jsa" pour Joint Sequence Analysis). Elle est de plus très peu associée à la dimension parentale ("enf"). Les dimensions matrimoniale ("mat") et parentales sont les plus liées. L'examen des alpha de Cronbach confirme ces résultats.
+
+```{r}
+asso <- assoc.domains(list(dmat,denf,dlog), c('mat','enf','log'), dissim.MSA)
+asso
+```
+On peut encore se faire une idée de la structure des associations entre dimensions en réalisant une analyse en composantes principales (ACP) de la matrice de corrélation entre dimensions.
+
+```{r, fig.align="center", out.width="80%"}
+# ACP à partir des corrélations entre dimensions
+matcor <- asso$correlations$pearson[1:3,1:3]
+PCA <- PCA(matcor, scale.unit=F, graph=F)
+plot.PCA(PCA, choix='varcor')
+```
+
+On calcule ensuite plusieurs matrices de distance entre séquences multiples en excluant à chaque l'une des dimensions.
+
+```{r, message=FALSE}
+dnolog <- seqdistmc(list(seqmat,seqenf), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",2)), cval=2)
+dnomat <- seqdistmc(list(seqenf,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",2)), cval=2)
+dnoenf <- seqdistmc(list(seqmat,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",2)), cval=2)
+dnolog <- as.numeric(as.dist(dnolog))
+dnomat <- as.numeric(as.dist(dnomat))
+dnoenf <- as.numeric(as.dist(dnoenf))
+```
+
+On examine ensuite, pour chaque dimension, la corrélation entre sa matrice de distance et la matrice de distance entre séquences multiples excluant cette dimension. Une fois encore, on voit que c'est la dimension logement qui est la moins associée aux autres.
+
+```{r}
+dmat %>% as.dist %>% as.numeric %>% cor(dnomat) %>% round(3)
+denf %>% as.dist %>% as.numeric %>% cor(dnoenf) %>% round(3)
+dlog %>% as.dist %>% as.numeric %>% cor(dnolog) %>% round(3)
+```
+Une dernière option consiste à trier les *index plots* de toutes les dimensions selon les résultats d'un *multidimensional scaling* (MDS) réalisé pour une seule dimension. Ici, on trie les séquences à partir d'un MDS de la dimension matrimoniale. L'ordre des séquences des deux autres dimensions semble obéir à une logique interprétable, on peut donc considérer que les dimensions sont suffisamment liées entre elles pour justifier une analyse de séquences multiples.
+
+```{r, fig.align="center", out.width="80%"}
+mds.msa <- cmdscale(dmat,k=1)
+par(mfrow=c(3,2), mar=c(2.1,2.1,2.1,2.1))
+seqIplot(seqmat, sortv=mds.msa, xtlab=14:35, with.legend=FALSE, yaxis=FALSE, ylab="")
+seqlegend(seqmat, cex=0.7)
+seqIplot(seqenf, sortv=mds.msa, xtlab=14:35, with.legend=FALSE, yaxis=FALSE, ylab="")
+seqlegend(seqenf, cex=0.7)
+seqIplot(seqlog, sortv=mds.msa, xtlab=14:35, with.legend=FALSE, yaxis=FALSE, ylab="")
+seqlegend(seqlog, cex=0.7)
+```
+
+
+## Typologie de séquences via *Multidimensional Sequence Analysis* (MSA)
+
+Pour obtenir une typologie, on réalise une CAH à partir de la matrice de distance issue de l'analyse de séquences multiples.
+
+```{r, fig.align="center", out.width="80%"}
+# classification ascendante hiérarchique
+agnes.MSA <- agnes(as.dist(dissim.MSA), method="ward", keep.diss=FALSE)
+plot(as.dendrogram(agnes.MSA), leaflab="none")
+```
+
+On opte pour une typologie en 5 classes.
+
+```{r}
+# choix d'une typologie en 5 classes
+nbcl.MSA <- 5
+part.MSA <- cutree(agnes.MSA, nbcl.MSA) %>% factor
+```
+
+Pour obtenir les chronogrammes des classes de la typologie (un graphique par classe et par dimension) :
+
+```{r, fig.align="center", out.width = '100%', eval=FALSE}
+# chronogrammes de la typologie
+# ngroups <- nlevels(part.MSA)
+par(mfrow=c(3,nbcl.MSA+1), mar=c(2.5, 2.1, 2.1, 2.1))
+for(i in 1:nbcl.MSA) seqdplot(seqmat[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE, main=paste('classe',i))
+seqlegend(seqmat, cex=0.5)
+for(i in 1:nbcl.MSA) seqdplot(seqenf[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE)
+seqlegend(seqenf, cex=0.5)
+for(i in 1:nbcl.MSA) seqdplot(seqlog[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE)
+seqlegend(seqlog, cex=0.5)
+```
+
+
+## Typologie de séquences via *Globally Interdependent Multiple Sequence Analysis* (GIMSA)
+
+Une alternative à l'analyse de séquences multiples est la *Globally Interdependent Multiple Sequence Analysis* (GIMSA, voir Robette *et al*, 2015).
+
+On commence par charger les données et les coder sous forme de séquences. Il s'agit de :
+- 400 trajectoires professionnelles de mères, observées entre 14 et 60 ans avec les états suivants: indépendante, catégorie socioprofessionnelle moyenne/supérieure, catégorie socioprofessionnelle populaire, inactivité, études.
+- 400 trajectoires d'emploi de leurs filles, observées au cours des 15 premières années après la fin des études, avec les états suivants: études, inactivité, temps partiel , temps plein.
+
+```{r}
+# chargement des données
+data(seqgimsa)
+trajfilles <- seqgimsa %>% select(starts_with('f'))
+str(trajfilles)
+```
+
+```{r}
+trajmeres <- seqgimsa %>% select(starts_with('m'))
+str(trajmeres)
+```
+
+```{r}
+# définition des séquences
+lab.meres <- c("indép","moyen/sup","popu","inactivité","études")
+pal.meres <- brewer.pal(5, "Set1")
+seqmeres <- seqdef(trajmeres,lab=lab.meres, cpal=pal.meres)
+```
+
+```{r}
+lab.filles <- c("études","inactivité","temps partiel","temps plein")
+pal.meres <- brewer.pal(4, "Set1")
+seqfilles <- seqdef(trajfilles,lab=lab.filles, cpla=pal.filles)
+```
+
+La première étape consiste à calculer une matrice de distance pour les mères et une pour les filles. On utilise la métrique LCS pour les mères et la distance de Hamming pour les filles.
+
+```{r, message=FALSE}
+# étape 1 : mesure de dissimilarité
+dmeres <- seqdist(seqmeres,method="LCS")
+cout.filles <- seqsubm(seqfilles, method="CONSTANT", cval=2)
+dfilles <- seqdist(seqfilles, method="HAM", sm=cout.filles)
+```
+
+Dans la seconde étape, on résume les matrices de distance à partir d'un MDS.
+
+```{r}
+# étape 2 : multidimensional scaling
+mds.meres <- cmdscale(dmeres, k=20, eig=TRUE)
+mds.filles <- cmdscale(dfilles, k=20, eig=TRUE)
+```
+
+On sélectionne le nombre de facteurs à retenir pour chacun des MDS.
+
+```{r, fig.align="center", out.width = '100%'}
+# choix du nombre de dimensions à retenir pour les mères
+par(mfrow=c(1,2))
+# mesure de stress
+seqmds.stress(dmeres, mds.meres) %>% plot(type='l', xlab='nombre de facteurs', ylab='stress')
+# part de variance expliquée
+(mds.meres$eig[1:10]/mds.meres$eig[1]) %>% plot(type='s', xlab='nombre de facteurs', ylab='part de variance expliquée')
+```
+
+```{r, fig.align="center", out.width = '100%'}
+# choix du nombre de dimensions à retenir pour les filles
+par(mfrow=c(1,2))
+# mesure de stress
+seqmds.stress(dfilles, mds.filles) %>% plot(type='l', xlab='nombre de facteurs', ylab='stress')
+# part de variance expliquée
+(mds.filles$eig[1:10]/mds.filles$eig[1]) %>% plot(type='s', xlab='nombre de facteurs', ylab='part de variance expliquée')
+```
+
+Dans la troisième étape, on résume les relations entre les résultats du MDS des mères et ceux du MDS des filles, à l'aide d'une PLS symétrique.
+
+```{r}
+# étape 3 : PLS symétrique
+a <- mds.meres$points[,1:5]
+b <- mds.filles$points[,1:4]
+pls <- symPLS(a,b)
+```
+
+Dans la quatrième et dernière étape, on calcule une matrice de distance unique entre les dyades de trajectoires mères-filles. Il est possible de pondérer les dimensions des mères et des filles, pour équilibrer leur contribution aux résultats finaux.
+
+```{r,  eval=FALSE}
+# étape 4 : distance et classification
+
+# pas de pondération
+F <- pls$F
+G <- pls$G
+
+# pondération par la variance des composantes de la PLS (w1)
+F <- apply(pls$F,2,scale,center=FALSE)
+G <- apply(pls$G,2,scale,center=FALSE)
+
+# pondération par le nombre de séquences distinctes (w2)
+F <- pls$F/nrow(seqtab(seqmeres,tlim=0))
+G <- pls$G/nrow(seqtab(seqfilles,tlim=0))
+
+# pondération par la 1ère valeur propre du MDS (w3)
+F <- pls$F/mds.meres$eig[1]
+G <- pls$G/mds.filles$eig[1]
+```
+
+On utilise ici la pondération w1.
+
+```{r}
+# pondération par la variance des composantes de la PLS (w1)
+F <- apply(pls$F,2,scale,center=FALSE)
+G <- apply(pls$G,2,scale,center=FALSE)
+```
+
+```{r}
+# calcul de distance
+diff2 <- function(X) return(as.matrix(dist(X,upper=T,diag=T)^2,nrow=nrow(X)))
+D <- (diff2(F)+diff2(G))^0.5
+```
+
+On réalise ensuite une classification automatique (ici une CAH). 
+
+```{r, fig.align="center", out.width = '80%'}
+# classification
+dist.GIMSA <- as.dist(D)
+agnes.GIMSA <- agnes(dist.GIMSA, method="ward", keep.diss=FALSE)
+plot(as.dendrogram(agnes.GIMSA), leaflab="none")
+```
+
+On choisit une partition en 5 classes.
+
+```{r}
+# partition en 5 classes
+nbcl.GIMSA <- 5
+part.GIMSA <- cutree(agnes.GIMSA, nbcl.GIMSA) %>% factor
+```
+
+Pour finir, on représente graphiquement la typologie à l'aide de chronogrammes.
+
+```{r, fig.align="center", out.width = '100%'}
+par(mfrow=c(3,nbcl.GIMSA), mar=c(2.5, 2.1, 2.1, 2.1))
+for(i in 1:nbcl.GIMSA) seqdplot(seqmeres[part.GIMSA==i,], xtlab=14:60, border=NA, with.legend=FALSE, main=paste('classe',i))
+for(i in 1:nbcl.GIMSA) seqdplot(seqfilles[part.GIMSA==i,], xtlab=1:15, border=NA, with.legend=FALSE)
+seqlegend(seqmeres, cex=0.6)
+seqlegend(seqfilles, cex=0.6)
+```
+
+```{r, echo=FALSE}
+par(oldpar)
+options(oldoptions)
+```
+

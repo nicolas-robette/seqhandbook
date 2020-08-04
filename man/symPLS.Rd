@@ -2,10 +2,10 @@
 \alias{symPLS}
 
 \title{
-Symmetric PLS
+Symmetric (or canonical) PLS
 }
 \description{
-Computes symmetric PLS for two groups of continuous variables
+Computes symmetric (or canonical) PLS for two groups of continuous variables
 }
 \usage{
 symPLS(a,b)
@@ -17,15 +17,9 @@ symPLS(a,b)
 
 \author{Nicolas Robette, Xavier Bry}
 
-\examples{
-##---- Should be DIRECTLY executable !! ----
-##-- ==>  Define data, use random,
-##--	or do  help(data=index)  for the standard data sets.
-
-## The function is currently defined as
-function (x) 
-{
-  }
+\references{
+Bry X. (1996). Analyses Factorielles Multiples. Paris, Economica Poche.
+de Jong S., Wise B.M. and Ricker N.L. (2001). Canonical Partial Least Squares and Continuum Power Regression. \emph{Journal of Chemometrics}, Vol. 15, 85–100.
 }
 
 \keyword{Longitudinal characteristics}

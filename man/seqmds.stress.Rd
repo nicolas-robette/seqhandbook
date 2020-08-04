@@ -17,6 +17,10 @@ seqmds.stress(seqdist, mds)
   \item{mds}{a matrix with coordinates in the represented space (dimension 1 in column 1, dimension 2 in column 2, etc.)}
 }
 
+\value{
+A numerical vector of stress values.
+}
+
 \references{
 Piccarreta R., Lior O. (2010). Exploring sequences: a graphical tool based on multi-dimensional scaling, \emph{Journal of the Royal Statistical Society (Series A)}, Vol. 173(1), 165-184.
 }
@@ -24,14 +28,12 @@ Piccarreta R., Lior O. (2010). Exploring sequences: a graphical tool based on mu
 \author{Nicolas Robette}
 
 \examples{
-##---- Should be DIRECTLY executable !! ----
-##-- ==>  Define data, use random,
-##--	or do  help(data=index)  for the standard data sets.
-
-## The function is currently defined as
-function (x) 
-{
-  }
+data(trajact)
+seqact <- seqdef(trajact)
+dissim <- seqdist(seqact, method="HAM")
+mds <- cmdscale(dissim, k=20, eig=TRUE)
+stress <- seqmds.stress(dissim, mds)
+plot(stress, type='l', xlab='number of dimensions', ylab='stress')
 }
 
 \keyword{Longitudinal characteristics}
