@@ -1,0 +1,868 @@
+---
+title: "[eng] Tutorial on sequence analysis"
+author: "Nicolas Robette"
+date: "`r Sys.Date()`"
+output: 
+ rmdformats::html_clean:
+   thumbnails: FALSE
+   use_bookdown: FALSE
+vignette: >
+  %\VignetteIndexEntry{[eng] Tutorial on sequence analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{WeightedCluster}
+---
+
+
+```{r setup, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+oldpar <- par() 
+oldoptions <- options()
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               prompt=FALSE,
+               tidy=FALSE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+
+
+# Preliminary steps
+
+Start by loading the necessary packages (which must be installed beforehand if they are not already installed) : `TraMineR`{.pkg} and `TraMineRextras`{.pkg} for sequence analysis, `cluster`{.pkg} and `WeightedCluster`{.pkg} for clustering, `FactoMineR`{.pkg} et `ade4`{.pkg} for correspondence analysis, `RColorBrewer`{.pkg} for color palettes, `questionr`{.pkg} et `GDAtools`{.pkg} for descriptive statistics, `dplyr`{.pkg} et `purrr`{.pkg} for data manipulation, `ggplot2`{.pkg} for plots and `seqhandbook`{.pkg} which accompanies the handbook.
+
+```{r, message=FALSE}
+library(TraMineR)
+library(TraMineRextras)
+library(cluster)
+library(WeightedCluster)
+library(FactoMineR)
+library(ade4)
+library(RColorBrewer)
+library(questionr)
+library(GDAtools)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(seqhandbook)
+```
+
+The data used in the handbook is then loaded. The data on employment trajectories are in the data frame `trajact`: there are 500 observations, i.e. 500 individual trajectories, and 37 variables, corresponding to the activity status observed each year between the ages of 14 and 50.
+
+```{r}
+# loading the trajectories
+data(trajact)
+str(trajact)
+```
+
+The first step in sequence analysis is to create a corpus of sequences, i.e. a `stslist` class object using the `seqdef` function. First the labels of the 6 states and a palette of 6 colours are defined (this is optional: `seqdef` creates labels and palette automatically if not provided).
+
+```{r}
+# defining of a corpus of sequences
+labs <- c("studies","full-time","part-time","short jobs","inactivity","military")
+palette <- brewer.pal(length(labs), 'Set2')
+seqact <- seqdef(trajact, labels=labs, cpal=palette)
+```
+
+Our corpus of 500 sequences consists of 377 distinct sequences, which confirms the interest of using a statistical procedure to group together sequences that are similar.
+
+```{r}
+# number of distinct sequences
+seqtab(seqact, idx=0) %>% nrow
+```
+
+The *state distribution plot* of all the sequences shows the preponderance of full-time employment and the non-negligible weight of inactivity.
+
+```{r fig1, fig.align="center", out.width="80%"}
+# state distribution plot
+seqdplot(seqact, xtlab=14:50, cex.legend=0.7)
+```
+
+A data frame is also loaded containing some socio-demographic variables on the individuals. Note that the categorical variables are in `factor` format.
+
+```{r}
+# loading the socio-demographic variables
+data(socdem)
+str(socdem)
+```
+***
+
+# Building a distance matrix
+
+## Synthetic indicators
+
+As an example, a distance matrix is constructed from indicators describing the number of episodes in the different states. The first individual has spent his entire trajectory in full-time employment, while the second has experienced one full-time episode but also one episode of study and two of part-time employment.
+
+```{r}
+indics <- seqinepi(seqact)
+head(indics)
+```
+
+The matrix can be calculated directly from the indicators or after a Principal Component Analysis (PCA) step, here by retaining the first 5 dimensions.
+
+```{r}
+# distance matrix from the indicator
+dissim <- dist(indics, method='euclidean') %>% as.matrix
+
+# distance matrix from PCA results
+acp_coords <- PCA(indics, scale.unit=FALSE, ncp=5, graph=FALSE)$ind$coord
+dissim <- dist(acp_coords, method='euclidean') %>% as.matrix
+```
+
+Other synthetic indicators (durations, states visited, etc.) can be calculated simply from the functions `seqistatd`, `seqi1epi`, `seqifpos`, `seqindic` or `seqpropclust`.
+
+## Disjunctive coding and QHA
+
+In the case of complete disjunctive coding, the distance matrix can be calculated directly, with the Euclidean distance or the chi2 distance, or after a Principal Component Analysis (PCA) or Multiple Correspondence Analysis (MCA) step, here by retaining the first 5 dimensions.
+
+NB: `map_df` allows you to apply the same function to all the columns of a data frame. Here, this function is used to convert columns from numerical format to `factor` format.
+
+```{r}
+# complete disjunctive coding
+disjo <- dichotom(seqact)
+disjo <- disjo[,colSums(disjo)>0]
+
+# euclidian distance
+dissim <- dist(disjo, method='euclidean') %>% as.matrix
+
+# chi2 distance
+dissim <- map_df(disjo, as.factor) %>%
+          dudi.acm(scannf=FALSE, nf=ncol(disjo)) %>%
+          dist.dudi() %>%
+          as.matrix
+
+# after a PCA step
+acp_coords <- PCA(disjo, scale.unit=FALSE, ncp=5, graph=FALSE)$ind$coord
+dissim <- dist(acp_coords, method='euclidean') %>% as.matrix
+
+# after a MCA step
+acm_res <- purrr::map_df(disjo, as.factor) %>%
+           MCA(ncp=5, graph=FALSE)
+dissim <- dist(acm_res$ind$coord, method='euclidean') %>% as.matrix
+```
+
+For the qualitative harmonic analysis (QHA), the calculation of the distance matrix can be done directly (chi2 distance) or after a correspondence analysis (CA), here using the first 5 dimensions.
+
+```{r}
+# QHA coding
+ahq <- seq2qha(seqact, c(1,3,7,10,15,20,28))
+ahq <- ahq[,colSums(ahq)>0]
+
+# chi2 distance
+dissim <- dudi.coa(ahq, scannf=FALSE, nf=ncol(ahq)) %>%
+          dist.dudi() %>%
+          as.matrix
+
+# after a CA step
+afc_coord <- CA(ahq, ncp=5, graph=FALSE)$row$coord
+dissim <- dist(afc_coord, method='euclidean') %>% as.matrix
+```
+
+
+## *Optimal Matching* and alternatives
+
+For *Optimal Matching*, the construction of a distance matrix between sequences is done with the `seqdist` function. This also involves defining a substitution cost matrix between states (with the `seqsubm` function). Here the substitution costs are constant and equal to 2 and the *indel* cost is equal to 1.5.
+
+```{r, message=FALSE}
+# building the distance matrix
+couts <- seqsubm(seqact, method="CONSTANT", cval=2)
+dissim <- seqdist(seqact, method="OM", sm=couts, indel=1.5)
+```
+
+From experience, *Optimal Matching* with the parameters adopted here is a choice that allows the different dimensions of sequence temporality to be taken into account - *sequencing*, calendar (*timing*), duration (in different states or episodes, *duration* and *spell duration*). If you wish to focus on one of these dimensions, you can follow the recommendations of Studer & Ritschard (2016, see in particular pages 507-509), and choose one of the many other metrics implemented in the `TraMineR` extension.
+
+```{r, eval=FALSE}
+# sequencing
+dissim <- seqdist(seqact, method="OMstran", otto=0.1, sm=couts, indel=1)
+dissim <- seqdist(seqact, method="OMspell", expcost=0, sm=couts, indel=1)
+dissim <- seqdist(seqact, method="SVRspell", tpow=0)
+
+# timing
+dissim <- seqdist(seqact, method="HAM", sm=couts)
+dissim <- seqdist(seqact, method="CHI2", step=1)
+
+# duration (distribution aver the entire period)
+dissim <- seqdist(seqact, method="EUCLID", step=37)
+
+# duration (spell lengths)
+dissim <- seqdist(seqact, method="OMspell", expcost=1, sm=couts, indel=1)
+dissim <- seqdist(seqact, method="LCS")
+```
+
+Note that methods using the complete disjunctive coding or QHA are also implemented in the `seqdist` function ("EUCLID" and "CHI2" methods).
+
+
+***
+
+# Typology of sequences
+
+## Building a typology
+
+A hierarchical agglomerative clustering (HAC) is then carried out using Ward's aggregation criterion, using the `agnes` function of the `cluster` extension.
+
+NB: With a high number of sequences, HAC may require a significant amount of computing time. However, there is a much faster implementation in the `fastcluster` package (`hclust` function).
+
+```{r}
+# hierarchical agglomerative clustering
+agnes <- as.dist(dissim) %>% agnes(method="ward", keep.diss=FALSE)
+```
+
+In order to explore the solutions of a hierarchical agglomerative clustering, one usually starts by examining the dendrogram.
+
+```{r, fig.align="center", out.width="80%"}
+# dendrogram
+as.dendrogram(agnes) %>% plot(leaflab="none")
+```
+
+The following graph combines dendrogram and *index plot*: the sequences of the index plot index are sorted according to their position in the dendrogram, which is shown in the margin of the graph.
+
+```{r, fig.align="center", out.width="80%"}
+# heatmap (dendrogram + index plot)
+seq_heatmap(seqact, agnes)
+```
+
+Examination of inertia gaps can also be useful in determining the number of clusters in the typology. For example, it can be seen that there is a noticeable difference in inertia between partitions in 5 and 6 clusters.
+
+```{r, fig.align="center", out.width="80%"}
+# plot of inertia
+plot(sort(agnes$height, decreasing=TRUE)[1:20], type="s", xlab="number of clusters", ylab="inertia")
+```
+
+There are also a number of indicators of partition quality (silhouette, Calinski-Harabasz, pseudo-R2, etc.; see Studer, 2013).
+
+```{r}
+# indicators of quality
+wardRange <- as.clustrange(agnes, diss=dissim)
+summary(wardRange, max.rank=2)
+```
+
+The quality of the partitions for different numbers of clusters for the silhouette, pseudo-R2 and Calinski-Harabasz indicators is shown graphically here.
+
+```{r, fig.align="center", out.width="80%"}
+plot(wardRange, stat=c('ASW','R2','CH'), norm="zscore")
+```
+
+In the end, we opt for a partition in 5 clusters, by "cutting the tree" of the HAC using the `cutree` function.
+
+```{r}
+# choosing the partition in 5 clusters
+nbcl <- 5
+part <- cutree(agnes, nbcl)
+```
+
+It is possible to "consolidate" the partition using the PAM algorithm (*Partition Around Medoids*) and the `wcKMedoids` function of the `WeightedCluster` package. This results in a very similar distribution of sequences between the clusters (see the table crossing the clusters before and after consolidation) but the quality of the consolidated partition is slightly higher (the R² goes from 61 to 64%).
+
+```{r}
+# consolidating the partition
+newpart <- wcKMedoids(dissim, k=nbcl, initialclust=part, cluster.only=TRUE)
+table(part, newpart)
+wcClusterQuality(dissim, part)$stats['R2sq'] %>% round(3)
+wcClusterQuality(dissim, newpart)$stats['R2sq'] %>% round(3)
+```
+
+If you wish to keep the consolidated partition :
+
+```{r}
+part <- as.numeric(as.factor(newpart))
+```
+
+NB: Another option, the "fuzzy" clustering, here with the Fanny algorithm (extension `cluster`). Unlike HAC or PAM, each sequence does not belong to a single cluster but is characterised by degrees of membership to the different clusters. The following table presents the degrees of membership to the 6 clusters of the first 3 sequences of the corpus. The first sequence belongs 99% to cluster 1, but the second is more "balanced", mainly between clusters 2 and 5.
+
+```{r}
+# fuzzy clustering
+fanny <- as.dist(dissim) %>% fanny(k=5, metric='euclidean', memb.exp=1.2)
+fanny$membership %>% round(2) %>% .[1:3,]
+```
+
+
+## Describing the typology: plots
+
+The graphical representations give a quick and intuitive idea of the nature of the clusters in the typology. The most commonly used type of graph is the *state distribution plot*.
+
+```{r, fig.align="center", out.width="80%"}
+# state distribution plots of the typology
+seqdplot(seqact, group=part, xtlab=14:50, border=NA, cex.legend=0.8)
+```
+
+The *index plots* are also very common.
+
+```{r, fig.align="center", out.width="80%"}
+# index plots of the typology
+seqIplot(seqact, group=part, xtlab=14:50, yaxis=FALSE, cex.legend=0.8)
+```
+
+The *index plots* are often easier to interpret when sorting sequences, especially from a *multidimensional scaling* procedure.
+
+```{r, fig.align="center", out.width="80%"}
+# index plots of the typology, sorted by multidimensional scaling
+mds.order <- cmdscale(dissim,k=1)
+seqIplot(seqact, sortv=mds.order, group=part, xtlab=14:50, yaxis=FALSE, cex.legend=0.8)
+```
+
+They can also be "smoothed" to make them more legible.
+
+"*smoothed MDS sequence plots*" method (Piccarreta, 2012):
+
+```{r}
+smoothed <- seqsmooth(seqact, dissim, k=30)$seqdata
+seqIplot(smoothed, sortv=mds.order, group=part, xtlab=14:50, yaxis=FALSE, cex.legend=0.8)
+```
+
+"*relative frequency sequence plots*" method (Fasang & Liao, 2013):
+
+```{r, fig.align="center", out.width="80%", message=FALSE}
+# relative frequency sequence plots
+seqplot.rf(seqact, diss=dissim, group=part, xtlab=14:50, which.plot="medoids")
+```
+
+The *sequence frequency plots* represent, for each cluster, the 10 most frequent sequences (with a thickness proportional to their frequency).
+
+```{r, fig.align="center", out.width="80%"}
+# frequency plots
+seqfplot(seqact, group=part, ylab="", xtlab=14:50, cex.legend=0.8)
+```
+
+The *modal state sequence plots* represent, for each cluster, the sequence of modal states for each position in time. At each position in time, the height of the bar is proportional to the frequency of the modal state.
+
+```{r, fig.align="center", out.width="80%"}
+# modal state plots
+seqmsplot(seqact, group=part, xtlab=14:50, cex.legend=0.8)
+```
+
+```{r, fig.align="center", out.width="80%", message=FALSE, include=FALSE}
+# representative sequence plots
+seqrplot(seqact, group=part, diss=dissim, nrep=10, xtlab=14:50)
+```
+
+
+## Describing the typology: descriptive statistics
+
+The first step in the statistical description of the typology is usually to present the weight of the clusters. Cluster 2 comprises more than half of the individuals, while clusters 3 and 5 are very small.
+
+```{r}
+# weights
+table(part)
+```
+
+```{r}
+# percentages
+100*(table(part))/length(part)
+```
+
+It is useful to assess the homogeneity of clusters. This can be done on the basis of intra-cluster distances. Clusters 1 and 2 are the most homogeneous.
+
+```{r}
+# intra-cluster distances
+Dintra <- integer(length=nbcl)
+for(i in 1:nbcl) Dintra[i] <- round(mean(dissim[part==i,part==i]),1)
+Dintra
+```
+
+The results are convergent based on average distances to cluster centres:
+
+```{r}
+# average distances to cluster centres
+dissassoc(dissim, part)$groups
+```
+
+The same applies to transversal entropy:
+
+```{r}
+# average transversal entropy per cluster
+entropie <- vector()
+for(i in 1:nbcl) entropie[i] <- round(mean(seqstatd(seqact[part==i,])$Entropy),2)
+entropie
+```
+
+To give a more detailed view of the shape of the trajectories of each cluster, synthetic indicators are calculated and then averaged according to the cluster of the typology. The time spent in the states :
+
+```{r, message=FALSE}
+# time spent in the states per cluster
+dur <- seqistatd(seqact)
+durees <- round(aggregate(dur, by=list(part), FUN=mean), 1)
+rownames(durees) <- NULL
+durees
+```
+
+The share of individuals having experienced at least one episode in the states :
+
+```{r, message=FALSE}
+# at least one episode in the states, per cluster
+epi <- seqi1epi(seqact)
+episodes <- round(aggregate(epi, by=list(part), FUN=mean), 2)
+rownames(episodes) <- NULL
+episodes
+```
+
+Ensuite, on croise la typologie avec les caractéristiques des individus. On commence par une analyse bivariée du type de trajectoire selon le sexe. Le V² de Cramer est de 0,16, indiquant une association notable. Les femmes sont très sur-représentées dans la classe 4 et secondairement dans la classe 3, alors que les hommes sont sur-représentés dans les classes 1 et 2 (les valeurs "phi" correspondent aux attractions ou répulsions entre modalités).
+
+Next, the typology is cross-tabulated with the characteristics of the individuals. We begin with a bivariate analysis of the type of trajectory according to gender. Cramer's V² is 0.16, indicating a significant association. Women are highly over-represented in cluster 4 and secondarily in cluster 3, while men are over-represented in clusters 1 and 2 (the "phi" values correspond to attractions or repulsions between categories).
+
+NB: The two objects `part` and `socdem` must not have been sorted. If this is nevertheless the case, they must be merged from a common identifier, or re-sorted according to the initial order.
+
+```{r}
+assoc.twocat(factor(part), socdem$sexe)
+```
+
+The over-representations for each cluster in the typology are then examined on the basis of all the individual characteristics present in the `socdem` data frame. First of all, it can be seen that only three variables do not seem to be significantly related to the type of trajectory (mereactive, nbunion, nationality). To take just the example of cluster 4, we see that women are over-represented there, as well as individuals with three or more children, without a diploma or with unknown PCS (which is certainly not unrelated to inactivity).
+
+```{r}
+catdesc(factor(part), socdem, min.phi=0.1)
+```
+
+
+## Describing the typology: medoids
+
+To "flesh out" the typology, we sometimes resort to the *medoids* of the clusters, whose trajectories are traced in detail from information not taken into account in the trajectory coding.
+
+```{r}
+# medoid of each cluster (line numbers in the data)
+medoids(dissim, part)
+```
+
+
+***
+
+# Non-typological analyses
+
+## Distance to a reference sequence
+
+Here we define a "reference" sequence corresponding to a continuous full-time employment trajectory from the age of 18, i.e. a sequence consisting of 4 years of study followed by 33 years of full-time employment. For each sequence, its distance from the reference sequence is then calculated: to what extent do they deviate from this reference?
+
+```{r, message=FALSE}
+ref <- seqdef(as.matrix("(1,4)-(2,33)"), informat="SPS", alphabet=alphabet(seqact))
+distref <- seqdist(seqact, refseq = ref, method="OM", sm=couts, indel=1.5)
+```
+
+The distribution of these differences is then observed according to gender and number of children. It can be seen that women's trajectories deviate more from the trajectory of continuous full-time employment than those of men when they have one or more children. The gap is particularly large for women with three or more children.
+
+```{r, message=FALSE}
+socdem %>% select(sexe,nbenf) %>%
+           mutate(distref=distref) %>%
+           ggplot(aes(x=nbenf, y=distref)) + 
+             geom_boxplot(aes(fill=sexe), notch=T) +
+             xlab("number of children") +
+             ylab("distance to reference") +
+             theme_bw()
+```
+
+
+## Inter or intra-group distances
+
+We compare the distances between female trajectories and the distances between male trajectories. The male trajectories are clearly more homogeneous or, to put it another way, the female trajectories are more diverse.
+
+```{r}
+# intra-cluster distances by gender
+sapply(levels(socdem$sexe), function(x) round(mean(dissim[socdem$sexe==x,socdem$sexe==x]),1))
+```
+
+The distance matrix between trajectories can be summarised graphically from a *multidimensional scaling* (MDS). Here we represent the cloud of individuals in the plane formed by the first two dimensions, by colouring the points according to their cluster, then we project the gender as an additional variable. We observe, for example, that, on the first dimension, clusters 1 and 2 are opposed to each other, and that men are on the side of clusters 1 and 2.
+
+```{r, fig.align="center", out.width="80%"}
+mds <- cmdscale(dissim, k=2)
+plot(mds, type='n', xlab="axe 1", ylab="axe 2")
+abline(h=0, v=0, lty=2, col='lightgray')
+points(mds, pch=20, col=part)
+legend('topleft', paste('cluster',1:nbcl), pch=20, col=1:nbcl, cex=0.8)
+text(aggregate(mds, list(socdem$sexe), mean)[,-1], levels(socdem$sexe), col='orange', cex=1, font=2)
+```
+
+
+## Synthetic indicators
+
+We can study the distribution of indicators synthesising trajectories according to other characteristics of individuals. For example, the time spent in the different states according to gender: the weight of inactivity in women's trajectories can be seen.
+
+```{r, message=FALSE}
+# durations in states by gender
+dur <- seqistatd(seqact)
+durees_sexe <- aggregate(dur, by=list(socdem$sexe), function(x) round(mean(x),1))
+rownames(durees_sexe) <- NULL
+colnames(durees_sexe) <- c("cluster",labs)
+durees_sexe
+```
+
+We now give an example of an indicator of trajectory complexity, turbulence, crossed with the year of birth. No noticeable change is observed.
+
+```{r}
+# turbulence
+turbu <- aggregate(seqST(seqact), list(socdem$annais), mean)
+plot(turbu, type='l', ylim=c(0,10), xlab='Birth year')
+```
+
+Other indicators of the complexity of trajectories can be easily calculated: complexity index (function `seqici`), individual entropy (function `seqient`), number of transitions (function `seqtransn`).
+
+
+## Analysis of variance
+
+With a single explanatory variable, we measure the share of the variance (or discrepancy) of dissimilarities explained by the variable (using a pseudo-R2), as well as a measure of the variability of trajectories for each of the categories of the variable, i.e. in each sub-population. In our example, gender explains 7.4% of the variance of the distances between employment trajectories (see *pseudo R2* in the *Test values* section), and the variability of trajectories is significantly higher for women than for men (19.1 versus 9.4, see *Discrepancy per level* section).
+
+```{r}
+# analysis of variance, with gender as factor
+dissassoc(dissim, socdem$sexe)
+```
+
+It is possible to detail these indicators for each position in time of the trajectories. Thus, the share of variance explained by gender is almost nil at the beginning of the trajectory, then increases sharply between the ages of 18 and around 30 (it is 14% at that time), then decreases to only 5% at the age of 50.
+
+```{r, fig.align="center", out.width="80%"}
+# analysis of variance for each position in time
+diff <- seqdiff(seqact, group=socdem$sexe)
+rownames(diff$stat) <- rownames(diff$discrepancy) <- 14:49
+plot(diff, stat="Pseudo R2")
+```
+
+The variability of women's and men's trajectories is low at the beginning of the trajectory and increases until the age of 21. The results then diverge according to gender: the variability of women's trajectories is maintained until the age of 50, while that of men decreases sharply after the age of 21 and reaches a very low level between the ages of 30 and 50.
+
+```{r, fig.align="center", out.width="80%"}
+pal <- brewer.pal(ncol(diff$discrepancy), "Set2")
+plot(diff, stat="discrepancy", legend.pos=NA, col=pal, lwd=1.5)
+legend('topright', fill=pal, legend=colnames(diff$discrepancy), cex=0.7)
+```
+
+With several explanatory variables, we obtain the share of variance explained by all the variables and the decomposition of this share between the variables. Here, year of birth, gender, level of education and number of children together explain 16.2% of the variance of the dissimilarities between employment trajectories: 7.7% for gender, 6.0% for education, 2.1% for number of children and 0.3% for year of birth.
+
+```{r}
+# analysis of variance with multiple factors
+dissmfacw(dissim ~ annais+nbenf+sexe+diplome, data=socdem)
+```
+
+Finally, the analysis of variance can be used to build a decision tree, also known as an induction tree.
+
+```{r}
+# induction tree
+arbre <- seqtree(seqact ~ annais+nbenf+sexe+diplome, data=socdem, diss=dissim, min.size=0.1, max.depth=3)
+```
+
+The tree can be presented in textual or graphic form. Note that the graphical representation requires the installation of the GraphViz software (see the help of the `seqtreedisplay` function).
+
+As before, it can be seen that the variable that explains the largest share of variance in the dissimilarities is gender. Next, for women, the most discriminating variable is the number of children and, more specifically, whether or not they have three or more children. Inactivity and, secondarily, part-time work are more present in the trajectories of women with at least three children than in those of others. For men, on the other hand, it is the level of education that is the most discriminating factor (men enter the labour market later when they have a diploma higher than or equal to the baccalaureat).
+
+```{r}
+# tree results in textual form
+print(arbre)
+```
+
+```{r, eval=FALSE}
+# tree results in graphic form
+seqtreedisplay(arbre,type="d",border=NA,show.depth=TRUE)
+```
+
+```{r, fig.align="center", out.width = '100%', echo=FALSE}
+knitr::include_graphics("http://nicolas.robette.free.fr/Docs/seqtree.png")
+```
+
+
+## Implicative statistics
+
+To study how trajectories differ between several sub-populations, Studer proposes to use implicative statistics. This involves reconstructing, for each population, the sequence of typical states (Studer, 2012; Struffolino *et al*, 2016).
+
+Here, military service is typical of men's trajectories around the age of 20, followed by full-time employment from the age of 25 onwards. Inactivity is typical of women's trajectories, from the age of 18 onwards. Part-time employment is also characteristic, but less markedly so from the age of 30 onwards.
+
+```{r, fig.align="center", out.width="80%"}
+# implicative statistics
+implic <- seqimplic(seqact, group=socdem$sexe)
+# par(mar=c(2,2,2,2))
+plot(implic, xtlab=14:50, lwd=2, conf.level=c(0.95, 0.99), cex.legend=0.7)
+```
+
+
+***
+
+# Multidimensional sequence analysis
+
+## Getting started
+
+We begin by loading the data corresponding to three dimensions of the trajectories of 500 individuals drawn at random in the *Biographies and entourage* survey - matrimonial, parental and residential - and observed between the ages of 14 and 35.
+
+```{r}
+data(seqmsa)
+trajmat <- seqmsa %>% select(starts_with('smat'))
+str(trajmat)
+```
+
+```{r}
+trajenf <- seqmsa %>% select(starts_with('nenf'))
+str(trajenf)
+```
+
+```{r}
+trajlog <- seqmsa %>% select(starts_with('slog'))
+str(trajlog)
+```
+
+Three sequence objects (one per dimension) are then defined.
+
+```{r}
+# definition of matrimonial trajectories
+labs <- c("never","unmarried couple","married","separated")
+palette <- brewer.pal(length(labs), 'Set2')
+seqmat <- seqdef(trajmat, labels=labs, cpal=palette)
+```
+
+```{r}
+# definition of parental trajectories
+labs <- c("0","1","2","3+")
+palette <- brewer.pal(length(labs), 'YlOrRd')
+seqenf <- seqdef(trajenf, labels=labs, cpal=palette)
+```
+
+```{r}
+# definition of residential independence trajectories
+labs <- c("non indep","indep")
+palette <- brewer.pal(3, 'Set1')[1:2]
+seqlog <- seqdef(trajlog, labels=labs, cpal=palette)
+```
+
+## Association between dimensions
+
+The distance matrix of each dimension is calculated using Optimal Matching (unique substitution cost equal to 2, *indel* cost of 1.5).
+
+```{r, message=FALSE}
+# distance matrices of the 3 dimensions
+dmat <- seqdist(seqmat, method="OM", indel=1.5, sm=seqsubm(seqmat,"CONSTANT",cval=2))
+denf <- seqdist(seqenf, method="OM", indel=1.5, sm=seqsubm(seqenf,"CONSTANT",cval=2))
+dlog <- seqdist(seqlog, method="OM", indel=1.5, sm=seqsubm(seqlog,"CONSTANT",cval=2))
+```
+
+A distance matrix is also calculated from a multiple sequence analysis (also called "multichannel sequence analysis"). It is decided here to keep the same costs for each of the dimensions, but this is not mandatory.
+
+```{r, message=FALSE}
+# distance matrix for multidimensional sequences
+dissim.MSA <- seqdistmc(list(seqmat,seqenf,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",3)), cval=2)
+```
+
+The extent to which the different dimensions are interrelated is then investigated, which can be achieved in a number of ways (Piccarreta, 2017). From the correlations, we see that the residential dimension ("log") is least related to the distance matrix between multiple sequences (here called "jsa" for Joint Sequence Analysis). It is moreover very little associated with the parental dimension ("enf"). The matrimonial ("mat") and parental dimensions are the most related. Cronbach's alpha examination confirms these results.
+
+```{r}
+asso <- assoc.domains(list(dmat,denf,dlog), c('mat','enf','log'), dissim.MSA)
+asso
+```
+
+An idea of the structure of associations across dimensions can still be gained by carrying out a Principal Component Analysis (PCA) of the matrix of correlations between dimensions.
+
+```{r, fig.align="center", out.width="80%"}
+# PCA of the matrix of correlations between dimensions
+matcor <- asso$correlations$pearson[1:3,1:3]
+PCA <- PCA(matcor, scale.unit=F, graph=F)
+plot.PCA(PCA, choix='varcor')
+```
+
+Several distance matrices between multiple sequences are then calculated by excluding one of the dimensions at each one.
+
+```{r, message=FALSE}
+dnolog <- seqdistmc(list(seqmat,seqenf), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",2)), cval=2)
+dnomat <- seqdistmc(list(seqenf,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",2)), cval=2)
+dnoenf <- seqdistmc(list(seqmat,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",2)), cval=2)
+dnolog <- as.numeric(as.dist(dnolog))
+dnomat <- as.numeric(as.dist(dnomat))
+dnoenf <- as.numeric(as.dist(dnoenf))
+```
+
+We then examine, for each dimension, the correlation between its distance matrix and the distance matrix between multiple sequences excluding that dimension. Once again, we see that it is the residential dimension that is least associated with the others.
+
+```{r}
+dmat %>% as.dist %>% as.numeric %>% cor(dnomat) %>% round(3)
+denf %>% as.dist %>% as.numeric %>% cor(dnoenf) %>% round(3)
+dlog %>% as.dist %>% as.numeric %>% cor(dnolog) %>% round(3)
+```
+
+A final option is to sort the *index plots* of all dimensions according to the results of a *multidimensional scaling* (MDS) performed for a single dimension (Piccarreta & Lior, 2010). Here, the sequences are sorted from an MDS of the matrimonial dimension. The order of the sequences of the other two dimensions seems to follow an interpretable logic, so we can consider that the dimensions are sufficiently related to each other to justify an analysis of multiple sequences.
+
+```{r, fig.align="center", out.width="80%"}
+mds.msa <- cmdscale(dmat,k=1)
+par(mfrow=c(3,2), mar=c(2.1,2.1,2.1,2.1))
+seqIplot(seqmat, sortv=mds.msa, xtlab=14:35, with.legend=FALSE, yaxis=FALSE, ylab="")
+seqlegend(seqmat, cex=0.7)
+seqIplot(seqenf, sortv=mds.msa, xtlab=14:35, with.legend=FALSE, yaxis=FALSE, ylab="")
+seqlegend(seqenf, cex=0.7)
+seqIplot(seqlog, sortv=mds.msa, xtlab=14:35, with.legend=FALSE, yaxis=FALSE, ylab="")
+seqlegend(seqlog, cex=0.7)
+```
+
+
+## Typology of sequences via *Multidimensional Sequence Analysis* (MSA)
+
+To obtain a typology, an HAC is made from the distance matrix resulting from the multiple sequence analysis.
+
+```{r, fig.align="center", out.width="80%"}
+# hierarchical agglomerative clustering
+agnes.MSA <- agnes(as.dist(dissim.MSA), method="ward", keep.diss=FALSE)
+plot(as.dendrogram(agnes.MSA), leaflab="none")
+```
+
+We opt for a typology in 5 classes.
+
+```{r}
+# choosing a 5-cluster solution
+nbcl.MSA <- 5
+part.MSA <- cutree(agnes.MSA, nbcl.MSA) %>% factor
+```
+
+To obtain the state distribution plots of the clusters of the typology (one graph per cluster and per dimension) :
+
+```{r, fig.align="center", out.width = '100%', eval=FALSE}
+# state distribution plots of the typology
+par(mfrow=c(3,nbcl.MSA+1), mar=c(2.5, 2.1, 2.1, 2.1))
+for(i in 1:nbcl.MSA) seqdplot(seqmat[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE, main=paste('cluster',i))
+seqlegend(seqmat, cex=0.5)
+for(i in 1:nbcl.MSA) seqdplot(seqenf[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE)
+seqlegend(seqenf, cex=0.5)
+for(i in 1:nbcl.MSA) seqdplot(seqlog[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE)
+seqlegend(seqlog, cex=0.5)
+```
+
+
+## Typology of sequences via *Globally Interdependent Multiple Sequence Analysis* (GIMSA)
+
+An alternative to multiple sequence analysis is *Globally Interdependent Multiple Sequence Analysis* (GIMSA, see Robette *et al*, 2015).
+
+First the data is loaded and coded in sequence. The sequences are :
+- 400 occupational trajectories of mothers, observed between 14 and 60 years old with the following states: independent, medium/upper socio-professional category, popular socio-professional category, inactivity, studies.
+- 400 employment trajectories of their daughters, observed during the first 15 years after the end of their studies, with the following states: studies, inactivity, part-time, full-time.
+
+```{r}
+# loading the data
+data(seqgimsa)
+trajfilles <- seqgimsa %>% select(starts_with('f'))
+str(trajfilles)
+```
+
+```{r}
+trajmeres <- seqgimsa %>% select(starts_with('m'))
+str(trajmeres)
+```
+
+```{r}
+# definition of the sequences
+lab.meres <- c("indep","medium/upper","popu","inactivity","studies")
+pal.meres <- brewer.pal(5, "Set1")
+seqmeres <- seqdef(trajmeres,lab=lab.meres, cpal=pal.meres)
+```
+
+```{r}
+lab.filles <- c("studies","inactivity","part-time","full-time")
+pal.meres <- brewer.pal(4, "Set1")
+seqfilles <- seqdef(trajfilles,lab=lab.filles, cpla=pal.filles)
+```
+
+The first step is to calculate a distance matrix for mothers and one for daughters. The LCS metric is used for mothers and the Hamming distance for daughters.
+
+```{r, message=FALSE}
+# step 1 : dissimilarity measure
+dmeres <- seqdist(seqmeres,method="LCS")
+cout.filles <- seqsubm(seqfilles, method="CONSTANT", cval=2)
+dfilles <- seqdist(seqfilles, method="HAM", sm=cout.filles)
+```
+
+In the second step, the distance matrices are summarised from an MDS.
+
+```{r}
+# step 2 : multidimensional scaling
+mds.meres <- cmdscale(dmeres, k=20, eig=TRUE)
+mds.filles <- cmdscale(dfilles, k=20, eig=TRUE)
+```
+
+The number of dimensions to be retained for each of the MDSs is selected.
+
+```{r, fig.align="center", out.width = '100%'}
+# choosing the numbers of dimensions to retain for mothers
+par(mfrow=c(1,2))
+# stress measure
+seqmds.stress(dmeres, mds.meres) %>% plot(type='l', xlab='number of dimensions', ylab='stress')
+# share of variance explained
+(mds.meres$eig[1:10]/mds.meres$eig[1]) %>% plot(type='s', xlab='number of dimensions', ylab='share of variance explained')
+```
+
+```{r, fig.align="center", out.width = '100%'}
+# choosing the numbers of dimensions to retain for daughters
+par(mfrow=c(1,2))
+# stress measure
+seqmds.stress(dfilles, mds.filles) %>% plot(type='l', xlab='number of dimensions', ylab='stress')
+# share of variance explained
+(mds.filles$eig[1:10]/mds.filles$eig[1]) %>% plot(type='s', xlab='number of dimensions', ylab='share of variance explained')
+```
+
+In the third step, the relationships between the results of the mothers' MDS and those of the daughters' MDS are summarised using a symmetric PLS.
+
+```{r}
+# step 3 : symmetric PLS
+a <- mds.meres$points[,1:5]
+b <- mds.filles$points[,1:4]
+pls <- symPLS(a,b)
+```
+
+In the fourth and final step, a single distance matrix is calculated between the dyads of mother-daughter trajectories. It is possible to weight the dimensions of mothers and daughters to balance their contribution to the final results.
+
+```{r,  eval=FALSE}
+# step : distance and clustering
+
+# no weighting
+F <- pls$F
+G <- pls$G
+
+# weighting by variance of PLS dimensions (w1)
+F <- apply(pls$F,2,scale,center=FALSE)
+G <- apply(pls$G,2,scale,center=FALSE)
+
+# weighting by number of distinct sequences (w2)
+F <- pls$F/nrow(seqtab(seqmeres,tlim=0))
+G <- pls$G/nrow(seqtab(seqfilles,tlim=0))
+
+# weighting by 1st MDS eigenvalue (w3)
+F <- pls$F/mds.meres$eig[1]
+G <- pls$G/mds.filles$eig[1]
+```
+
+The w1 weighting is used here.
+
+```{r}
+# weighting by variance of PLS dimensions (w1)
+F <- apply(pls$F,2,scale,center=FALSE)
+G <- apply(pls$G,2,scale,center=FALSE)
+```
+
+```{r}
+# distance computation
+diff2 <- function(X) return(as.matrix(dist(X,upper=T,diag=T)^2,nrow=nrow(X)))
+D <- (diff2(F)+diff2(G))^0.5
+```
+
+A clustering procedure is then carried out (here a HAC). 
+
+```{r, fig.align="center", out.width = '80%'}
+# clustering
+dist.GIMSA <- as.dist(D)
+agnes.GIMSA <- agnes(dist.GIMSA, method="ward", keep.diss=FALSE)
+plot(as.dendrogram(agnes.GIMSA), leaflab="none")
+```
+
+A partition is chosen in 5 clusters.
+
+```{r}
+# partition in 5 clusters
+nbcl.GIMSA <- 5
+part.GIMSA <- cutree(agnes.GIMSA, nbcl.GIMSA) %>% factor
+```
+
+Finally, the typology is represented graphically with the help of state distribution plots.
+
+```{r, fig.align="center", out.width = '100%'}
+par(mfrow=c(3,nbcl.GIMSA), mar=c(2.5, 2.1, 2.1, 2.1))
+for(i in 1:nbcl.GIMSA) seqdplot(seqmeres[part.GIMSA==i,], xtlab=14:60, border=NA, with.legend=FALSE, main=paste('cluster',i))
+for(i in 1:nbcl.GIMSA) seqdplot(seqfilles[part.GIMSA==i,], xtlab=1:15, border=NA, with.legend=FALSE)
+seqlegend(seqmeres, cex=0.6)
+seqlegend(seqfilles, cex=0.6)
+```
+
+```{r, echo=FALSE}
+par(oldpar)
+options(oldoptions)
+```
+

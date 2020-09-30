@@ -63,7 +63,7 @@ data(trajact)
 str(trajact)
 ```
 
-La première étape de l'analyse de séquences consiste à créer un corpus de séquences, c'est-à-dire un objet de classe `stslist` à l'aide la fonction `seqdef`. On définit d'abord (mais c'est facultatif) les labels des 6 états et une palette de 6 couleurs.
+La première étape de l'analyse de séquences consiste à créer un corpus de séquences, c'est-à-dire un objet de classe `stslist` à l'aide la fonction `seqdef`. On définit d'abord les labels des 6 états et une palette de 6 couleurs (c'est facultatif: `seqdef` crée labels et palette de manière automatique si on ne lui fournit pas).
 
 ```{r}
 # définition du corpus de séquences
@@ -86,7 +86,7 @@ Le chronogramme (*state distribution plot*) de l'ensemble des séquences fait ap
 seqdplot(seqact, xtlab=14:50, cex.legend=0.7)
 ```
 
-On charge également un tableau de données contenant quelques variables socio-démographiques sur les individus.
+On charge également un tableau de données contenant quelques variables socio-démographiques sur les individus. A noter, les variables catégorielles sont au format `factor`.
 
 ```{r}
 # chargement des variables socio-démographiques
@@ -99,7 +99,7 @@ str(socdem)
 
 ## Indicateurs synthétiques
 
-A titre d'exemple, on construit une matrice de distance à partir d'indicateurs décrivant le nombre d'épisodes dans les différents états.
+A titre d'exemple, on construit une matrice de distance à partir d'indicateurs décrivant le nombre d'épisodes dans les différents états. Le premier individu a passé l'ensemble de sa trajectoire en emploi à temps plein, alors que le second a connu un épisode de temps plein mais aussi un épisode d'études et deux de temps partiel.
 
 ```{r}
 indics <- seqinepi(seqact)
@@ -123,6 +123,8 @@ D'autres indicateurs synthétiques (durées, états visités, etc.) peuvent êtr
 ## Disjonctif complet et AHQ
 
 Dans le cas du codage sous forme de disjonctif complet, la matrice de distance peut être calculée directement, avec la distance euclidienne ou la distance du chi2, ou après une étape d'analyse en composantes principales (ACP) ou d'analyse des correspondances multiples (ACM), ici en retenant les 5 premières dimensions.
+
+NB : `map_df` permet d'appliquer une même fonction à l'ensemble des colonnes d'un tableau de données. Ici, cette fonction est utilisée pour convertir les colonnes du format numérique vers le format `factor`.
 
 ```{r}
 # codage disjonctif complet
@@ -235,7 +237,7 @@ L'examen des sauts d'inertie peut également être utile pour déterminer le nom
 plot(sort(agnes$height, decreasing=TRUE)[1:20], type="s", xlab="nombre de classes", ylab="inertie")
 ```
 
-Il existe aussi un certain nombre d'indicateurs de qualité des partitions (silhouette, Calinski-Harabasz, pseudo-R2, etc.).
+Il existe aussi un certain nombre d'indicateurs de qualité des partitions (silhouette, Calinski-Harabasz, pseudo-R2, etc.; voir Studer, 2013).
 
 ```{r}
 # indicateurs de qualité
@@ -273,7 +275,7 @@ Si on souhaite conserver la partition consolidée :
 part <- as.numeric(as.factor(newpart))
 ```
 
-NB: Autre option, la classification "floue", ici avec l'algorithme Fanny (extension `cluster`). A la différence de la CAH ou de PAM, chaque séquence n'appartient pas à une seule classe mais se caractérise par des degrés d'appartenance aux différentes classes. Le tableau suivant présente les degrés d'appartenance aux 6 classes des 3 premières séquences du corpus. La première séquence appartient à 99% à la classe 1, mais la seconde est plus "partagée", principalement entre les classes 2 et 5.
+NB : Autre option, la classification "floue", ici avec l'algorithme Fanny (extension `cluster`). A la différence de la CAH ou de PAM, chaque séquence n'appartient pas à une seule classe mais se caractérise par des degrés d'appartenance aux différentes classes. Le tableau suivant présente les degrés d'appartenance aux 6 classes des 3 premières séquences du corpus. La première séquence appartient à 99% à la classe 1, mais la seconde est plus "partagée", principalement entre les classes 2 et 5.
 
 ```{r}
 # classification floue (fuzzy clustering)
@@ -319,7 +321,7 @@ Méthode des "*relative frequency sequence plots*" (Fasang & Liao, 2013):
 
 ```{r, fig.align="center", out.width="80%", message=FALSE}
 # relative frequency sequence plots
-seqplot.rf(seqact, diss=dissim, group=part, xtlab=14:50)
+seqplot.rf(seqact, diss=dissim, group=part, xtlab=14:50, which.plot="medoids")
 ```
 
 Les *sequence frequency plots* représentent, pour chaque classe, les 10 séquences les plus fréquentes (avec une épaisseur proportionnelle à leur fréquence).
@@ -364,6 +366,7 @@ Dintra <- integer(length=nbcl)
 for(i in 1:nbcl) Dintra[i] <- round(mean(dissim[part==i,part==i]),1)
 Dintra
 ```
+
 Les résultats sont convergents à partir des distances moyennes aux centres de classe :
 
 ```{r}
@@ -402,6 +405,8 @@ episodes
 
 Ensuite, on croise la typologie avec les caractéristiques des individus. On commence par une analyse bivariée du type de trajectoire selon le sexe. Le V² de Cramer est de 0,16, indiquant une association notable. Les femmes sont très sur-représentées dans la classe 4 et secondairement dans la classe 3, alors que les hommes sont sur-représentés dans les classes 1 et 2 (les valeurs "phi" correspondent aux attractions ou répulsions entre modalités).
 
+NB : Les deux objets `part` et `socdem` ne doivent pas avoir été triés. Si c'est malgré tout le cas, il faut les fusionner à partir d'un identfiant commun, ou les retrier selon l'ordre initial.
+
 ```{r}
 assoc.twocat(factor(part), socdem$sexe)
 ```
@@ -429,7 +434,7 @@ medoids(dissim, part)
 
 ## Distance à une séquence de référence
 
-On définit ici une séquence "de référence" correspondant à une trajectoire d'emploi à temps plein en continu à partir de 18 ans. On calcule ensuite, pour chaque séquence, sa distance à la séquence de référence: dans quelle mesure s'écartent-elles de cette référence ?
+On définit ici une séquence "de référence" correspondant à une trajectoire d'emploi à temps plein en continu à partir de 18 ans, c'est-à-dire une séquence composée de 4 années d'études puis de 33 années d'emploi à temps plein. On calcule ensuite, pour chaque séquence, sa distance à la séquence de référence: dans quelle mesure s'écartent-elles de cette référence ?
 
 ```{r, message=FALSE}
 ref <- seqdef(as.matrix("(1,4)-(2,33)"), informat="SPS", alphabet=alphabet(seqact))
@@ -440,7 +445,7 @@ On observe ensuite la distribution de ces écarts en fonction du sexe et du nomb
 
 ```{r, message=FALSE}
 socdem %>% select(sexe,nbenf) %>%
-           tibble(distref=distref) %>%
+           mutate(distref=distref) %>%
            ggplot(aes(x=nbenf, y=distref)) + 
              geom_boxplot(aes(fill=sexe), notch=T) +
              xlab("nombre d'enfants") +
@@ -457,7 +462,8 @@ On compare les distances entre les trajectoires féminines et les distances entr
 # distances intra-classes selon le sexe
 sapply(levels(socdem$sexe), function(x) round(mean(dissim[socdem$sexe==x,socdem$sexe==x]),1))
 ```
-La matrice de distance entre trajectoires peut être résumé graphiquement à partir d'un *multidimensional scaling* (MDS). On représente ici le nuage des individus dans le plan formé par les deux premiers axes, en colorant les points selon leur classe, puis on projette le sexe en variable supplémentaire. On observe par exemple que, sur le premier axe, les classes 1 et 2 s'opposent aux autres, et que les hommes sont du côté des classes 1 et 2.
+
+La matrice de distance entre trajectoires peut être résumée graphiquement à partir d'un *multidimensional scaling* (MDS). On représente ici le nuage des individus dans le plan formé par les deux premiers axes, en colorant les points selon leur classe, puis on projette le sexe en variable supplémentaire. On observe par exemple que, sur le premier axe, les classes 1 et 2 s'opposent aux autres, et que les hommes sont du côté des classes 1 et 2.
 
 ```{r, fig.align="center", out.width="80%"}
 mds <- cmdscale(dissim, k=2)
@@ -495,7 +501,7 @@ D'autres indicateurs de complexité des trajectoires peuvent être calculés fac
 
 ## Analyse de variance
 
-Avec une variable explicative unique, on mesure la part de la variance des dissimilarités expliquée par la variable (à l’aide d’un pseudo-R2), ainsi qu’une mesure de la variabilité des trajectoires pour chacune des modalités de la variable, i.e. dans chaque sous-population. Dans notre exemple, le sexe explique 7,4% de la variance des distances entre trajectoires d’emploi, et la variabilité des trajectoires est nettement plus élevée chez les femmes que chez les hommes (19,1 contre 9,4).
+Avec une variable explicative unique, on mesure la part de la variance des dissimilarités expliquée par la variable (à l’aide d’un pseudo-R2), ainsi qu’une mesure de la variabilité des trajectoires pour chacune des modalités de la variable, i.e. dans chaque sous-population. Dans notre exemple, le sexe explique 7,4% de la variance des distances entre trajectoires d’emploi (cf *pseudo R2* dans la rubrique *Test values*), et la variabilité des trajectoires est nettement plus élevée chez les femmes que chez les hommes (19,1 contre 9,4, cf rubrique *Discrepancy per level*).
 
 ```{r}
 # analyse de variance avec le sexe comme facteur
@@ -556,7 +562,7 @@ knitr::include_graphics("http://nicolas.robette.free.fr/Docs/seqtree.png")
 
 Pour étudier la manière dont les trajectoires diffèrent entre plusieurs sous-populations, Studer propose d’utiliser les statistiques implicatives. Il s’agit de reconstituer, pour chaque population, la séquence des états typiques (Studer, 2012; Struffolino *et al*, 2016).
 
-Ici, le service militaire est typique des trajectoires des hommes autour de 20 ans, puis c’est l’emploi à temps plein à partir de 25 ans (Figure 10). L’inactivité est caractéristique des trajectoires des femmes, et cela dès l’âge de 18 ans. L’emploi à temps partiel l’est également, mais de manière moins marquée et à partir de 30 ans.
+Ici, le service militaire est typique des trajectoires des hommes autour de 20 ans, puis c’est l’emploi à temps plein à partir de 25 ans. L’inactivité est caractéristique des trajectoires des femmes, et cela dès l’âge de 18 ans. L’emploi à temps partiel l’est également, mais de manière moins marquée et à partir de 30 ans.
 
 ```{r, fig.align="center", out.width="80%"}
 # statistiques implicatives
@@ -631,12 +637,13 @@ On calcule également une matrice de distance à partir d'une analyse de séquen
 dissim.MSA <- seqdistmc(list(seqmat,seqenf,seqlog), method="OM", indel=1.5, sm=as.list(rep("CONSTANT",3)), cval=2)
 ```
 
-On étudie ensuite dans quelle mesure les différentes dimensions sont liées, ce qui peut être réalisé de plusieurs manières. D'après les corrélations, on voit que la dimension logement ("log") est la moins liée à la matrice de distance entre séquences multiples (appelée ici "jsa" pour Joint Sequence Analysis). Elle est de plus très peu associée à la dimension parentale ("enf"). Les dimensions matrimoniale ("mat") et parentales sont les plus liées. L'examen des alpha de Cronbach confirme ces résultats.
+On étudie ensuite dans quelle mesure les différentes dimensions sont liées, ce qui peut être réalisé de plusieurs manières (Piccarreta, 2017). D'après les corrélations, on voit que la dimension logement ("log") est la moins liée à la matrice de distance entre séquences multiples (appelée ici "jsa" pour Joint Sequence Analysis). Elle est de plus très peu associée à la dimension parentale ("enf"). Les dimensions matrimoniale ("mat") et parentales sont les plus liées. L'examen des alpha de Cronbach confirme ces résultats.
 
 ```{r}
 asso <- assoc.domains(list(dmat,denf,dlog), c('mat','enf','log'), dissim.MSA)
 asso
 ```
+
 On peut encore se faire une idée de la structure des associations entre dimensions en réalisant une analyse en composantes principales (ACP) de la matrice de corrélation entre dimensions.
 
 ```{r, fig.align="center", out.width="80%"}
@@ -664,7 +671,8 @@ dmat %>% as.dist %>% as.numeric %>% cor(dnomat) %>% round(3)
 denf %>% as.dist %>% as.numeric %>% cor(dnoenf) %>% round(3)
 dlog %>% as.dist %>% as.numeric %>% cor(dnolog) %>% round(3)
 ```
-Une dernière option consiste à trier les *index plots* de toutes les dimensions selon les résultats d'un *multidimensional scaling* (MDS) réalisé pour une seule dimension. Ici, on trie les séquences à partir d'un MDS de la dimension matrimoniale. L'ordre des séquences des deux autres dimensions semble obéir à une logique interprétable, on peut donc considérer que les dimensions sont suffisamment liées entre elles pour justifier une analyse de séquences multiples.
+
+Une dernière option consiste à trier les *index plots* de toutes les dimensions selon les résultats d'un *multidimensional scaling* (MDS) réalisé pour une seule dimension (Piccarreta & Lior, 2010). Ici, on trie les séquences à partir d'un MDS de la dimension matrimoniale. L'ordre des séquences des deux autres dimensions semble obéir à une logique interprétable, on peut donc considérer que les dimensions sont suffisamment liées entre elles pour justifier une analyse de séquences multiples.
 
 ```{r, fig.align="center", out.width="80%"}
 mds.msa <- cmdscale(dmat,k=1)
@@ -700,7 +708,6 @@ Pour obtenir les chronogrammes des classes de la typologie (un graphique par cla
 
 ```{r, fig.align="center", out.width = '100%', eval=FALSE}
 # chronogrammes de la typologie
-# ngroups <- nlevels(part.MSA)
 par(mfrow=c(3,nbcl.MSA+1), mar=c(2.5, 2.1, 2.1, 2.1))
 for(i in 1:nbcl.MSA) seqdplot(seqmat[part.MSA==i,], xtlab=14:35, border=NA, with.legend=FALSE, main=paste('classe',i))
 seqlegend(seqmat, cex=0.5)
