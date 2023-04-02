@@ -1,13 +1,14 @@
 Package: seqhandbook
 Type: Package
 Title: Miscellaneous Tools for Sequence Analysis
-Version: 0.1.0
-Depends: TraMineR
-Suggests: knitr, rmarkdown, FactoMineR, GDAtools, RColorBrewer, TraMineRextras, WeightedCluster, ade4, cluster, questionr, rmdformats, dplyr, purrr, ggplot2
-VignetteBuilder: knitr
+Version: 0.1.1
+Depends: R (>= 3.5.0), TraMineR
+Suggests: R.rsp, knitr, rmarkdown, FactoMineR, descriptio, RColorBrewer, TraMineRextras, WeightedCluster, ade4, cluster, questionr, rmdformats, dplyr, purrr, ggplot2
+VignetteBuilder: R.rsp
 Author: Nicolas Robette
 Maintainer: Nicolas Robette <nicolas.robette@uvsq.fr>
 Description: It provides miscellaneous sequence analysis functions for describing episodes in individual sequences, measuring association between domains in multidimensional sequence analysis (see Piccarreta (2017) <doi:10.1177/0049124115591013>), heat maps of sequence data, Globally Interdependent Multidimensional Sequence Analysis (see Robette et al (2015) <doi:10.1177/0081175015570976>), smoothing sequences for index plots (see Piccarreta (2012) <doi:10.1177/0049124112452394>), coding sequences for Qualitative Harmonic Analysis (see Deville (1982)), measuring stress from multidimensional scaling factors (see Piccarreta and Lior (2010) <doi:10.1111/j.1467-985X.2009.00606.x>), symmetrical (or canonical) Partial Least Squares (see Bry (1996)).
 License: GPL (>= 2)
 Encoding: UTF-8
 LazyData: true
+URL: https://nicolas-robette.github.io/seqhandbook/
