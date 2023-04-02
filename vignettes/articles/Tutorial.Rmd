@@ -3,14 +3,18 @@ title: "[eng] Tutorial on sequence analysis"
 author: "Nicolas Robette"
 date: "`r Sys.Date()`"
 output: 
+ # pdf_document:
+ #    toc: true
+ #    toc_depth: 3
+ #    number_sections: true
  rmdformats::html_clean:
    thumbnails: FALSE
    use_bookdown: FALSE
-vignette: >
-  %\VignetteIndexEntry{[eng] Tutorial on sequence analysis}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
-  %\VignetteDepends{WeightedCluster}
+# vignette: >
+#   %\VignetteIndexEntry{[eng] Tutorial on sequence analysis}
+#   %\VignetteEngine{knitr::rmarkdown}
+#   %\VignetteEncoding{UTF-8}
+#   %\VignetteDepends{WeightedCluster}
 ---
 
 
@@ -37,7 +41,7 @@ opts_knit$set(width=75)
 
 # Preliminary steps
 
-Start by loading the necessary packages (which must be installed beforehand if they are not already installed) : `TraMineR`{.pkg} and `TraMineRextras`{.pkg} for sequence analysis, `cluster`{.pkg} and `WeightedCluster`{.pkg} for clustering, `FactoMineR`{.pkg} et `ade4`{.pkg} for correspondence analysis, `RColorBrewer`{.pkg} for color palettes, `questionr`{.pkg} et `GDAtools`{.pkg} for descriptive statistics, `dplyr`{.pkg} et `purrr`{.pkg} for data manipulation, `ggplot2`{.pkg} for plots and `seqhandbook`{.pkg} which accompanies the handbook.
+Start by loading the necessary packages (which must be installed beforehand if they are not already installed) : `TraMineR`{.pkg} and `TraMineRextras`{.pkg} for sequence analysis, `cluster`{.pkg} and `WeightedCluster`{.pkg} for clustering, `FactoMineR`{.pkg} et `ade4`{.pkg} for correspondence analysis, `RColorBrewer`{.pkg} for color palettes, `questionr`{.pkg} et `descriptio`{.pkg} for descriptive statistics, `dplyr`{.pkg} et `purrr`{.pkg} for data manipulation, `ggplot2`{.pkg} for plots and `seqhandbook`{.pkg} which accompanies the handbook.
 
 ```{r, message=FALSE}
 library(TraMineR)
@@ -48,7 +52,7 @@ library(FactoMineR)
 library(ade4)
 library(RColorBrewer)
 library(questionr)
-library(GDAtools)
+library(descriptio)
 library(dplyr)
 library(purrr)
 library(ggplot2)
@@ -127,7 +131,7 @@ NB: `map_df` allows you to apply the same function to all the columns of a data 
 
 ```{r}
 # complete disjunctive coding
-disjo <- dichotom(seqact)
+disjo <- as.data.frame(tab.disjonctif(seqact))
 disjo <- disjo[,colSums(disjo)>0]
 
 # euclidian distance
@@ -348,13 +352,8 @@ seqrplot(seqact, group=part, diss=dissim, nrep=10, xtlab=14:50)
 The first step in the statistical description of the typology is usually to present the weight of the clusters. Cluster 2 comprises more than half of the individuals, while clusters 3 and 5 are very small.
 
 ```{r}
-# weights
-table(part)
-```
-
-```{r}
-# percentages
-100*(table(part))/length(part)
+# weights and percentages
+freq(part)
 ```
 
 It is useful to assess the homogeneity of clusters. This can be done on the basis of intra-cluster distances. Clusters 1 and 2 are the most homogeneous.
@@ -404,18 +403,20 @@ episodes
 
 Ensuite, on croise la typologie avec les caractéristiques des individus. On commence par une analyse bivariée du type de trajectoire selon le sexe. Le V² de Cramer est de 0,16, indiquant une association notable. Les femmes sont très sur-représentées dans la classe 4 et secondairement dans la classe 3, alors que les hommes sont sur-représentés dans les classes 1 et 2 (les valeurs "phi" correspondent aux attractions ou répulsions entre modalités).
 
-Next, the typology is cross-tabulated with the characteristics of the individuals. We begin with a bivariate analysis of the type of trajectory according to gender. Cramer's V² is 0.16, indicating a significant association. Women are highly over-represented in cluster 4 and secondarily in cluster 3, while men are over-represented in clusters 1 and 2 (the "phi" values correspond to attractions or repulsions between categories).
+Next, the typology is cross-tabulated with the characteristics of the individuals. We begin with a bivariate analysis of the type of trajectory according to gender. Cramer's V² is 0.40, indicating a significant association. Women are highly over-represented in cluster 4 and secondarily in cluster 3, while men are over-represented in clusters 1 and 2 (the "phi" values correspond to attractions or repulsions between categories).
 
 NB: The two objects `part` and `socdem` must not have been sorted. If this is nevertheless the case, they must be merged from a common identifier, or re-sorted according to the initial order.
 
 ```{r}
-assoc.twocat(factor(part), socdem$sexe)
+asso <- assoc.twocat(factor(part), socdem$sexe)
+asso$global$cramer.v
+asso$local$phi
 ```
 
 The over-representations for each cluster in the typology are then examined on the basis of all the individual characteristics present in the `socdem` data frame. First of all, it can be seen that only three variables do not seem to be significantly related to the type of trajectory (mereactive, nbunion, nationality). To take just the example of cluster 4, we see that women are over-represented there, as well as individuals with three or more children, without a diploma or with unknown PCS (which is certainly not unrelated to inactivity).
 
 ```{r}
-catdesc(factor(part), socdem, min.phi=0.1)
+catdesc(factor(part), socdem, limit = 0.1)
 ```
 
 

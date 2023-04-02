@@ -3,14 +3,18 @@ title: "[fr] Tutoriel d'analyse de séquences"
 author: "Nicolas Robette"
 date: "`r Sys.Date()`"
 output: 
+ # pdf_document:
+ #    toc: true
+ #    toc_depth: 3
+ #    number_sections: true
  rmdformats::html_clean:
    thumbnails: FALSE
    use_bookdown: FALSE
-vignette: >
-  %\VignetteIndexEntry{[fr] Tutoriel d'analyse de séquences}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
-  %\VignetteDepends{WeightedCluster}
+# vignette: >
+#   %\VignetteIndexEntry{[fr] Tutoriel d'analyse de séquences}
+#   %\VignetteEngine{knitr::rmarkdown}
+#   %\VignetteEncoding{UTF-8}
+#   %\VignetteDepends{WeightedCluster}
 ---
 
 
@@ -37,7 +41,7 @@ opts_knit$set(width=75)
 
 # Mise en route
 
-On commence par charger les extensions (*packages*) nécessaires (qu'il faut au préalable installer si elles ne le sont pas déjà) : `TraMineR`{.pkg} et `TraMineRextras`{.pkg} pour le traitement des séquences, `cluster`{.pkg} pour les méthodes de classification automatique, `WeightedCluster`{.pkg} en complément des précédentes, `FactoMineR`{.pkg} et `ade4`{.pkg} pour les analyses factorielles, `RColorBrewer`{.pkg} pour les palettes de couleurs, `questionr`{.pkg} et `GDAtools`{.pkg} pour les statistiques descriptives, `dplyr`{.pkg} et `purrr`{.pkg} pour la manipulation de données, `ggplot2`{.pkg} pour les graphiques et `seqhandbook`{.pkg} l'extension qui accompagne le manuel.
+On commence par charger les extensions (*packages*) nécessaires (qu'il faut au préalable installer si elles ne le sont pas déjà) : `TraMineR`{.pkg} et `TraMineRextras`{.pkg} pour le traitement des séquences, `cluster`{.pkg} pour les méthodes de classification automatique, `WeightedCluster`{.pkg} en complément des précédentes, `FactoMineR`{.pkg} et `ade4`{.pkg} pour les analyses factorielles, `RColorBrewer`{.pkg} pour les palettes de couleurs, `questionr`{.pkg} et `descriptio`{.pkg} pour les statistiques descriptives, `dplyr`{.pkg} et `purrr`{.pkg} pour la manipulation de données, `ggplot2`{.pkg} pour les graphiques et `seqhandbook`{.pkg} l'extension qui accompagne le manuel.
 
 ```{r, message=FALSE}
 library(TraMineR)
@@ -48,7 +52,7 @@ library(FactoMineR)
 library(ade4)
 library(RColorBrewer)
 library(questionr)
-library(GDAtools)
+library(descriptio)
 library(dplyr)
 library(purrr)
 library(ggplot2)
@@ -128,7 +132,7 @@ NB : `map_df` permet d'appliquer une même fonction à l'ensemble des colonnes d
 
 ```{r}
 # codage disjonctif complet
-disjo <- dichotom(seqact)
+disjo <- as.data.frame(tab.disjonctif(seqact))
 disjo <- disjo[,colSums(disjo)>0]
 
 # distance euclidienne
@@ -349,13 +353,8 @@ seqrplot(seqact, group=part, diss=dissim, nrep=10, xtlab=14:50)
 La première étape de description statistique de la typologie consiste généralement à présenter le poids des classes. La classe 2 rassemble plus de la moitié des individus, alors que les classes 3 et 5 sont de très petite taille.
 
 ```{r}
-# effectifs
-table(part)
-```
-
-```{r}
-# pourcentages
-100*(table(part))/length(part)
+# effectifs et pourcentages
+freq(part)
 ```
 
 Il est utile d'évaluer l'homogénéité des classes. Cela peut se faire à partir des distances intra-classes. Les classes 1 et 2 sont les plus homogènes.
@@ -403,18 +402,20 @@ rownames(episodes) <- NULL
 episodes
 ```
 
-Ensuite, on croise la typologie avec les caractéristiques des individus. On commence par une analyse bivariée du type de trajectoire selon le sexe. Le V² de Cramer est de 0,16, indiquant une association notable. Les femmes sont très sur-représentées dans la classe 4 et secondairement dans la classe 3, alors que les hommes sont sur-représentés dans les classes 1 et 2 (les valeurs "phi" correspondent aux attractions ou répulsions entre modalités).
+Ensuite, on croise la typologie avec les caractéristiques des individus. On commence par une analyse bivariée du type de trajectoire selon le sexe. Le V² de Cramer est de 0,40, indiquant une association notable. Les femmes sont très sur-représentées dans la classe 4 et secondairement dans la classe 3, alors que les hommes sont sur-représentés dans les classes 1 et 2 (les valeurs "phi" correspondent aux attractions ou répulsions entre modalités).
 
 NB : Les deux objets `part` et `socdem` ne doivent pas avoir été triés. Si c'est malgré tout le cas, il faut les fusionner à partir d'un identfiant commun, ou les retrier selon l'ordre initial.
 
 ```{r}
-assoc.twocat(factor(part), socdem$sexe)
+asso <- assoc.twocat(factor(part), socdem$sexe)
+asso$global$cramer.v
+asso$local$phi
 ```
 
 On examine ensuite les sur-représentations pour chaque classe de la typologie à partir de l'ensemble des caractéristiques individuelles présentes dans le tableau de données `socdem`. On constate tout d'abord que seules trois variables ne semblent pas notablement liées au type de trajectoire (mereactive, nbunion, nationalite). Pour ne prendre que l'exemple de la classe 4, on voit que les femmes y sont sur-représentées, ainsi que les individus ayant trois enfants ou plus, sans diplôme ou de PCS inconnue (ce qui n'est certainement pas sans lien avec l'inactivité).
 
 ```{r}
-catdesc(factor(part), socdem, min.phi=0.1)
+catdesc(factor(part), socdem, limit = 0.1)
 ```
 
 
