@@ -30,4 +30,4 @@ install_github("nicolas-robette/seqhandbook")
 
 ## References
 
-Robette, Nicolas. *L'analyse statistique des trajectoires : Typologies de séquences et autres approches*. Nouvelle édition [en ligne]. Paris : Ined Éditions, 2021. Disponible sur Internet : <http://books.openedition.org/ined/16670>. ISBN : 9782733290507. DOI : https://doi.org/10.4000/books.ined.16670.
+Robette, Nicolas. *L'analyse statistique des trajectoires : Typologies de séquences et autres approches*. Nouvelle édition [en ligne]. Paris : Ined Éditions, 2021. Disponible sur Internet : <https://books.openedition.org/ined/16670>. ISBN : 9782733290507. DOI : https://doi.org/10.4000/books.ined.16670.
