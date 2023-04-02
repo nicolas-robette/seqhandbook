@@ -1,0 +1,11 @@
+pandoc: 2.19.2
+pkgdown: 2.0.7
+pkgdown_sha: ~
+articles:
+  Tutorial: Tutorial.html
+  Tutoriel: Tutoriel.html
+last_built: 2023-04-02T13:22Z
+urls:
+  reference: https://nicolas-robette.github.io/seqhandbook/reference
+  article: https://nicolas-robette.github.io/seqhandbook/articles
+
